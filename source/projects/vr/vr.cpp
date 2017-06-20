@@ -15,11 +15,13 @@ using namespace c74::max;
 extern "C" {
 	#include "jit.gl.h"
 
+#ifdef WIN_VERSION
 	// needed this for glFrameBuffer / GL_FRAMEBUFFER symbols
 	// (and needed to comment out the jit.common.h include)
 	#include "jit.gl.procs.h"
 	#include "jit.gl.support.h"
-	
+#endif
+
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
 	void * jit_object_findregistered(t_symbol *s);
 	void * jit_object_register(void *x, t_symbol *s);
@@ -489,13 +491,15 @@ void ext_main(void* r) {
 					| jit_ob3d_flags::NO_COLOR
 					;
 	void * ob3d = jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
+	
+	/*
 	// define our OB3D draw methods
 	//jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
-	class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
-	class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
+	jit_class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
+	jit_class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
 	// must register for ob3d use
-	class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
-	/*	
+	jit_class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
+		
 // 	class_addmethod(this_class, (method)vr_connect, "connect", 0);
 // 	class_addmethod(this_class, (method)vr_disconnect, "disconnect", 0);
 // 	class_addmethod(this_class, (method)vr_configure, "configure", 0);
@@ -508,12 +512,12 @@ void ext_main(void* r) {
 	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
 	//class_addmethod(this_class, (method)vr_battery, "battery", A_GIMME, 0);
 
-	*/
+	
 	CLASS_ATTR_FLOAT(this_class, "near_clip", 0, Vr, near_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "far_clip", NULL, vr_far_clip_set);
-
+*/
 	
 	class_register(CLASS_BOX, this_class);
 }
