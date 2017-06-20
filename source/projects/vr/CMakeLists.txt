@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.0)
 
+find_package(OpenGL)
+
+
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-pretarget.cmake)
 
@@ -19,5 +22,9 @@ add_library(
 	${PROJECT_NAME}.cpp
 )
 
+target_link_libraries(
+   ${PROJECT_NAME}
+   ${OPENGL_gl_LIBRARY}
+)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-posttarget.cmake)
