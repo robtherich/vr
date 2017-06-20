@@ -63,49 +63,6 @@ glm::quat quat_to_jitter(glm::quat const & v) {
 }
 
 
-void oculusrift_quit() {
-	if (oculus_initialized) ovr_Shutdown();
-	oculus_initialized = 0;
-}
-
-int oculusrift_init() {
-	if (oculus_initialized) return 1;
-
-	// init OVR SDK
-	ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
-	ovrResult result = ovr_Initialize(&initParams);
-	if (OVR_FAILURE(result)) {
-		object_error(0, "LibOVR: failed to initialize library");
-		ovrErrorInfo errorInfo;
-		ovr_GetLastErrorInfo(&errorInfo);
-		object_error(0, "ovr_Initialize failed: %s", errorInfo.ErrorString);
-		/*
-		switch (result) {
-		case ovrError_Initialize: object_error(NULL, "Generic initialization error."); break;
-		case ovrError_LibLoad: object_error(NULL, "Couldn't load LibOVRRT."); break;
-		case ovrError_LibVersion: object_error(NULL, "LibOVRRT version incompatibility."); break;
-		case ovrError_ServiceConnection: object_error(NULL, "Couldn't connect to the OVR Service."); break;
-		case ovrError_ServiceVersion: object_error(NULL, "OVR Service version incompatibility."); break;
-		case ovrError_IncompatibleOS: object_error(NULL, "The operating system version is incompatible."); break;
-		case ovrError_DisplayInit: object_error(NULL, "Unable to initialize the HMD display."); break;
-		case ovrError_ServerStart:  object_error(NULL, "Unable to start the server. Is it already running?"); break;
-		case ovrError_Reinitialization: object_error(NULL, "Attempted to re-initialize with a different version."); break;
-		default: object_error(NULL, "unknown initialization error."); break;
-		}*/
-		oculus_initialized = 0;
-	}
-	else {
-
-		quittask_install((method)oculusrift_quit, NULL);
-
-		ovr_IdentifyClient("EngineName: Max/MSP/Jitter\n"
-			"EngineVersion: 7\n"
-			"EnginePluginName: [oculusrift]\n"
-			"EngineEditor: true");
-		oculus_initialized = 1;
-	}
-	return oculus_initialized;
-}
 
 
 #include <string>
@@ -131,6 +88,7 @@ struct Vr {
 	
 	// configuration:
 	int connected = 0;
+	int dest_ready = 0;
 	
 	// guts:
 	
@@ -138,6 +96,20 @@ struct Vr {
 	// (we can't submit the jit_gl_texture directly)
 	GLuint fbo_id, rbo_id, fbo_texture_id;
 	t_atom_long fbo_texture_dim[2];
+
+	// driver-specific:
+	struct {
+		ovrSession session;
+		ovrSessionStatus status;
+		ovrHmdDesc hmd;
+		ovrGraphicsLuid luid;
+		ovrEyeRenderDesc eyeRenderDesc[2];
+		ovrVector3f      hmdToEyeViewOffset[2];
+		ovrLayerEyeFov layer;
+		ovrSizei pTextureDim;
+		ovrTextureSwapChain textureChain;
+		ovrMirrorTexture mirrorTexture;
+	} oculus;
 	
 	Vr(t_symbol * drawto) {
 		// init Max object:
@@ -156,10 +128,6 @@ struct Vr {
 		// some whatever defaults, will get overwritten when driver connects
 		fbo_texture_dim[0] = 1920;
 		fbo_texture_dim[1] = 1080;
-		
-
-		// try to see if the Oculus driver is available:
-		if (!oculus_initialized) oculusrift_init();
 	}
 
 	~Vr() {
@@ -176,18 +144,30 @@ struct Vr {
 	// attempt to acquire the HMD
 	void connect() {
 		if (connected) disconnect();
+
+		// try to see if the Oculus driver is available:
+		if (!(oculus_initialized || oculusrift_init())) return;
 		
 		// TODO: driver-specific stuff
+		if (!oculus_connect()) return;
 		
-		// if successful,
+		// if successful:
 		connected = 1;
 		
 		configure();
+
+		// if gpu is ready, go ahead & make what we need
+		if (dest_ready) {
+			create_gpu_resources();
+		}
 	}
 	
 	// release the HMD
 	void disconnect() {
+		if (!connected) return;
+
 		// TODO: driver-specific stuff
+		oculus_disconnect();
 	
 		connected = 0;
 	}
@@ -221,24 +201,53 @@ struct Vr {
 	// or when gl context is created
 	// e.g. when creating jit.world or entering/leaving fullscreen
 	t_jit_err dest_changed() {
-	
-		configure();
-		
-		// TODO only if connected?
-		// create the FBO used to pass the scene texture to the driver:
-		create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
-		
-		// TODO gpu resources for mirror, videocamera, 
-		
+		// mark drawto gpu context as usable
+		// might not allocate gpu resources immediately, depends on whether driver is also connected
+		dest_ready = 1;
+
+		// try to connect:
+		if (!connected) connect();
+
+		if (connected) {
+			create_gpu_resources();
+		}
 		return JIT_ERR_NONE;
 	}
-	
+
 	// Jitter GL context closing, need to destroy GPU objects
 	// happens on destruction of object (if context already existed)
 	// or when gl context is destroyed
 	// e.g. when deleting jit.world or entering/leaving fullscreen
 	t_jit_err dest_closing() {
+
+		// automatically disconnect at this point
+		// since without a Jitter GPU context, there's nothing we can do
+		// and disconnecting will free up the driver for other connections
+		// e.g. as needed when entering/leaving fullscreen
+		disconnect();
+
+		// mark drawto gpu context as unusable
+		dest_ready = 0;
+
+		release_gpu_resources();
+
+		return JIT_ERR_NONE;
+	}
+
+	void create_gpu_resources() {
+		if (!connected && !dest_ready) return;
+
+		// get drawto context:
+		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
 		
+		// create the FBO used to pass the scene texture to the driver:
+		create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
+		
+		// TODO gpu resources for mirror, videocamera,
+	}
+
+	void release_gpu_resources() {
+		// release associated resources:
 		if (fbo_id) {
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
@@ -251,10 +260,8 @@ struct Vr {
 			glDeleteRenderbuffersEXT(1, &rbo_id);
 			rbo_id = 0;
 		}
-		
+
 		// TODO gpu resources for mirror, videocamera, 
-		
-		return JIT_ERR_NONE;
 	}
 	
 	// poll HMD for events
@@ -488,6 +495,82 @@ struct Vr {
 	
 	// TODO videocamera
 	// TODO battery, vibrate, render models
+
+	//////////////////////////////////////////////////
+
+	static void oculusrift_quit() {
+		if (oculus_initialized) ovr_Shutdown();
+		oculus_initialized = 0;
+	}
+
+	int oculusrift_init() {
+		if (oculus_initialized) return 1;
+
+		// init OVR SDK
+		ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
+		ovrResult result = ovr_Initialize(&initParams);
+		if (OVR_FAILURE(result)) {
+			object_error(0, "LibOVR: failed to initialize library");
+			// if only this worked:
+			//ovrErrorInfo errorInfo;
+			//ovr_GetLastErrorInfo(&errorInfo);
+			//object_error(0, "ovr_Initialize failed: %s", errorInfo.ErrorString);
+
+			switch (result) {
+			case ovrError_Initialize: object_error(&ob, "Generic initialization error."); break;
+			case ovrError_LibLoad: object_error(&ob, "Couldn't load LibOVRRT."); break;
+			case ovrError_LibVersion: object_error(&ob, "LibOVRRT version incompatibility."); break;
+			case ovrError_ServiceConnection: object_error(&ob, "Couldn't connect to the OVR Service."); break;
+			case ovrError_ServiceVersion: object_error(&ob, "OVR Service version incompatibility."); break;
+			case ovrError_IncompatibleOS: object_error(&ob, "The operating system version is incompatible."); break;
+			case ovrError_DisplayInit: object_error(&ob, "Unable to initialize the HMD display."); break;
+			case ovrError_ServerStart:  object_error(&ob, "Unable to start the server. Is it already running?"); break;
+			case ovrError_Reinitialization: object_error(&ob, "Attempted to re-initialize with a different version."); break;
+			default: object_error(&ob, "unknown initialization error."); break;
+			}
+			oculus_initialized = 0;
+		}
+		else {
+
+			quittask_install((method)oculusrift_quit, NULL);
+
+			ovr_IdentifyClient("EngineName: Max/MSP/Jitter\n"
+				"EngineVersion: 7\n"
+				"EnginePluginName: [oculusrift]\n"
+				"EngineEditor: true");
+			oculus_initialized = 1;
+		}
+		return oculus_initialized;
+	}
+
+	bool oculus_connect() {
+		ovrResult result = ovr_Create(&oculus.session, &oculus.luid);
+		if (OVR_FAILURE(result)) {
+			ovrErrorInfo errInfo;
+			ovr_GetLastErrorInfo(&errInfo);
+			object_error(&ob, "failed to create session: %s", errInfo.ErrorString);
+
+			object_error(NULL, errInfo.ErrorString);
+			return false;
+		}
+
+		object_post(&ob, "LibOVR SDK %s, runtime %s", OVR_VERSION_STRING, ovr_GetVersionString());
+		
+		// update our session status
+		ovr_GetSessionStatus(oculus.session, &oculus.status);
+
+		return true;
+	}
+
+	void oculus_disconnect() {
+		if (oculus.session) {
+
+			release_gpu_resources();
+
+			ovr_Destroy(oculus.session);
+			oculus.session = 0;
+		}
+	}
 };
 
 void vr_connect(Vr * x) { x->connect(); }
@@ -503,6 +586,16 @@ void vr_jit_gl_texture(Vr * x, t_symbol * s, long argc, t_atom * argv) {
 	}
 }
 
+/*
+
+void oculusrift_perf(oculusrift * x) {
+x->perf();
+}
+
+void oculusrift_recenter(oculusrift * x) {
+if (x->session) ovr_RecenterTrackingOrigin(x->session);
+}*/
+
 t_max_err vr_near_clip_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	x->near_clip = atom_getfloat(argv);
 	x->configure();
@@ -515,6 +608,30 @@ t_max_err vr_far_clip_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	return 0;
 }
 
+/*
+
+t_max_err oculusrift_pixel_density_set(oculusrift *x, t_object *attr, long argc, t_atom *argv) {
+x->pixel_density = atom_getfloat(argv);
+
+x->configure();
+return 0;
+}
+
+t_max_err oculusrift_max_fov_set(oculusrift *x, t_object *attr, long argc, t_atom *argv) {
+x->max_fov = atom_getlong(argv);
+
+x->configure();
+return 0;
+}
+
+t_max_err oculusrift_tracking_level_set(oculusrift *x, t_object *attr, long argc, t_atom *argv) {
+x->tracking_level = atom_getlong(argv);
+
+x->configure();
+return 0;
+}
+*/
+
 void* vr_new(t_symbol* name, long argc, t_atom* argv) {
 	Vr * x = (Vr *)object_alloc(this_class);
 	if (x) {
@@ -522,8 +639,6 @@ void* vr_new(t_symbol* name, long argc, t_atom* argv) {
 		x = new (x)Vr(drawto);
 		// apply attrs:
 		attr_args_process(x, (short)argc, argv);
-		// TODO -- crashprone:
-		// x->connect();
 	}
 	return x;
 }
@@ -534,9 +649,23 @@ void vr_free(Vr* x) {
 }
 
 
-void vr_assist(Vr* self, void* unused, t_assist_function io, long index, char* string_dest) {
-	if (io == ASSIST_INLET)
-		strncpy(string_dest, "Message In", ASSIST_STRING_MAXSIZE);
+void vr_assist(Vr* self, void* unused, t_assist_function m, long a, char* s) {
+	if (m == ASSIST_INLET) { // inlet
+		sprintf(s, "bang to update tracking, texture to submit, other messages");
+	}
+	else {	// outlet
+		switch (a) {
+		case 0: sprintf(s, "output/mirror texture"); break;
+		case 1: sprintf(s, "to left eye camera"); break;
+		case 2: sprintf(s, "to right eye camera"); break;
+		case 3: sprintf(s, "to scene node (set texture dim)"); break;
+		case 4: sprintf(s, "tracking state"); break;
+		case 5: sprintf(s, "left controller"); break;
+		case 6: sprintf(s, "right controller"); break;
+		default: sprintf(s, "other messages"); break;
+			//default: sprintf(s, "I am outlet %ld", a); break;
+		}
+	}
 }
 
 
@@ -582,6 +711,24 @@ void ext_main(void* r) {
  	class_addmethod(this_class, (method)vr_configure, "configure", 0);
 	class_addmethod(this_class, (method)vr_bang, "bang", 0);
  	class_addmethod(this_class, (method)vr_jit_gl_texture, "jit_gl_texture", A_GIMME, 0);
+
+	// oculus only?
+
+	//class_addmethod(c, (method)oculusrift_perf, "perf", 0);
+	//class_addmethod(c, (method)oculusrift_recenter, "recenter", 0);
+	//CLASS_ATTR_FLOAT(c, "pixel_density", 0, oculusrift, pixel_density);
+	//CLASS_ATTR_ACCESSORS(c, "pixel_density", NULL, oculusrift_pixel_density_set);
+
+	// TODO: why is Rift not using max FOV (seems like the black overlay is not being made bigger - oculus bug?)
+	//CLASS_ATTR_LONG(c, "max_fov", 0, oculusrift, max_fov);
+	//CLASS_ATTR_ACCESSORS(c, "max_fov", NULL, oculusrift_max_fov_set);
+	//CLASS_ATTR_STYLE_LABEL(c, "max_fov", 0, "onoff", "use maximum field of view");
+
+	//CLASS_ATTR_LONG(c, "mirror", 0, oculusrift, mirror);
+	//CLASS_ATTR_STYLE_LABEL(c, "mirror", 0, "onoff", "mirror oculus display in main window");
+
+	//CLASS_ATTR_LONG(c, "tracking_level", 0, oculusrift, tracking_level);
+	//CLASS_ATTR_ACCESSORS(c, "tracking_level", NULL, oculusrift_tracking_level_set);
 	
 	// vive-specific:
 	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
