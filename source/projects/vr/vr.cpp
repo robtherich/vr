@@ -137,12 +137,15 @@ struct Vr {
 	// called whenever HMD properties change
 	// will dump a lot of information to the last outlet
 	void configure() {
-		if (!connected) return;
 		t_atom a[6];
 		
-		// TODO get driver details & output
-		// get recommended texture dim & output
-		// initialize camera matrices, frusta, etc. & output
+		if (connected) {
+			// TODO get driver details & output
+			// get recommended texture dim & output
+			// initialize camera matrices, frusta, etc. & output
+		}
+		
+		// now output camera properties:
 		
 		// set camera viewports:
 		atom_setfloat(a + 0, 0.);
@@ -152,6 +155,7 @@ struct Vr {
 		outlet_anything(outlet_eye[0], ps_viewport, 4, a);
 		atom_setfloat(a + 0, 0.5);
 		outlet_anything(outlet_eye[1], ps_viewport, 4, a);
+			
 	}
 	
 	// Jitter GL context changed, need to reallocate GPU objects
