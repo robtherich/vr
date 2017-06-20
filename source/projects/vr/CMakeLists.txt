@@ -3,8 +3,7 @@ cmake_minimum_required(VERSION 3.0)
 find_package(OpenGL)
 
 if (WIN32)
-	# Windows (including win64, despite WIN32, apparently...)
-
+	# Windows
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 		# Windows 64-bit
 		SET(OpenVR_LIB ${CMAKE_CURRENT_SOURCE_DIR}/openvr/lib/win64/openvr_api.lib)
