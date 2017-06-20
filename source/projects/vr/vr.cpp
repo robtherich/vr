@@ -23,6 +23,8 @@ extern "C" {
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
 	void * jit_object_findregistered(t_symbol *s);
 	void * jit_object_register(void *x, t_symbol *s);
+	void * jit_object_findregistered(c74::max::t_symbol *s);
+	void * jit_object_register(void *x, c74::max::t_symbol *s);
 }
 
 #include "al_math.h"
