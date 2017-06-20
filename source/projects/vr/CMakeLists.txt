@@ -9,6 +9,7 @@ include_directories(
 	"${CMAKE_CURRENT_SOURCE_DIR}/openvr/headers/"
 	"${CMAKE_CURRENT_SOURCE_DIR}/LibOVR/Include/"
 	"${C74_INCLUDES}"
+
 )
 
 

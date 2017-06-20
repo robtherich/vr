@@ -10,35 +10,41 @@
 
 #include "c74_jitter.h"
 
-/*
 extern "C" {
 	#include "jit.gl.h"
-	#include "jit.vecmath.h"
+	
+	// needed to declare these here, as they aren't declared in c74_jitter.h:
+	void * jit_object_findregistered(c74::max::t_symbol *s);
+	void * jit_object_register(void *x, c74::max::t_symbol *s);
 }
-*/
 
 #include "al_math.h"
+
+using namespace c74::max;
+
+static t_symbol * ps_glid;
+static t_symbol * ps_jit_gl_texture;
 
 // jitter uses xyzw format
 // glm:: uses wxyz format
 // xyzw -> wxyz
-inline glm::quat quat_from_jitter(glm::quat const & v) {
+glm::quat quat_from_jitter(glm::quat const & v) {
 	return glm::quat(v.z, v.w, v.x, v.y);
 }
 
-inline glm::quat quat_from_jitter(t_jit_quat const & v) {
+/*
+glm::quat quat_from_jitter(t_jit_quat const & v) {
 	return glm::quat(v.w, v.x, v.y, v.z);
-}
+}*/
 
 // wxyz -> xyzw
-inline glm::quat quat_to_jitter(glm::quat const & v) {
+glm::quat quat_to_jitter(glm::quat const & v) {
 	return glm::quat(v.x, v.y, v.z, v.w);
 }
 
 #include <string>
 #include <fstream>
 
-using namespace c74::max;
 
 static t_class* this_class = nullptr;
 
@@ -67,7 +73,7 @@ struct Vr {
 	GLuint fbo_id, rbo_id, fbo_texture_id;
 	t_atom_long fbo_texture_dim[2];
 	
-	Vr() {
+	Vr(t_symbol * drawto) {
 		// outlets create in reverse order:
 		outlet_msg = outlet_new(&ob, NULL);
 		//outlet_video = outlet_new(&ob, "jit_gl_texture");
@@ -176,10 +182,14 @@ struct Vr {
 		
 		// get desired view matrix (from @position and @quat attrs)
 		glm::vec3 m_position;
-		jit_attr_getfloat_array(this, _jit_sym_position, 3, &m_position.x);
-		t_jit_quat m_jitquat;
-		jit_attr_getfloat_array(this, _jit_sym_quat, 4, &m_jitquat.x);
-		glm::mat4 modelview_mat = glm::translate(glm::mat4(1.0f), m_position) * mat4_cast(quat_from_jitter(m_jitquat));
+		//object_attr_getfloat_array(this, _jit_sym_position, 3, &m_position.x);
+		object_attr_getfloat_array(this, _jit_sym_position, 3, &m_position.x);
+		
+		//t_jit_quat jitquat;
+		glm::quat jitquat;
+		//object_attr_getfloat_array(this, _jit_sym_quat, 4, &jitquat.x);
+		object_attr_getfloat_array(this, _jit_sym_quat, 4, &jitquat.x);
+		glm::mat4 modelview_mat = glm::translate(glm::mat4(1.0f), m_position) * mat4_cast(quat_from_jitter(jitquat));
 		
 		// TODO: video (or separate message for this?)
 		
@@ -218,10 +228,11 @@ struct Vr {
 	}
 	
 	void submit_texture_to_hmd(void * jit_texture) {
-		GLuint input_texture_id = jit_attr_getlong(jit_texture, ps_glid);
+		//GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
+		GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
 		// get input texture dimensions
 		t_atom_long input_texture_dim[2];
-		jit_attr_getlong_array(jit_texture, _sym_dim, 2, input_texture_dim);
+		object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
 		//post("submit texture id %ld dim %ld %ld\n", input_texture_id, input_texture_dim[0], input_texture_dim[1]);
 		
 		if (!fbo_id) {
@@ -254,7 +265,7 @@ struct Vr {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, inFBOtex, 0);
+		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, *fbo_texture_id_ptr, 0);
 
 		// check FBO status
 		GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
@@ -285,7 +296,7 @@ struct Vr {
 		glPushClientAttrib(GL_CLIENT_ALL_ATTRIB_BITS);
 
 		// TODO use rectangle 1?
-		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, inFBO);
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_id);
 		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, fbo_texture_id, 0);
 		if (fbo_check()) {
 			glMatrixMode(GL_TEXTURE);
@@ -420,10 +431,10 @@ t_max_err vr_far_clip_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 }
 
 void* vr_new(t_symbol* name, long argc, t_atom* argv) {
-	Vr * x = object_alloc(this_class);
+	Vr * x = (Vr *)object_alloc(this_class);
 	if (x) {
 		t_symbol * drawto = atom_getsym(argv);
-		x = new (x)htcvive(drawto);
+		x = new (x)Vr(drawto);
 		// apply attrs:
 		attr_args_process(x, (short)argc, argv);
 		// TODO -- crashprone:
@@ -433,7 +444,7 @@ void* vr_new(t_symbol* name, long argc, t_atom* argv) {
 }
 
 
-void vr_free(Vr* self) {
+void vr_free(Vr* x) {
 	x->~Vr();
 }
 
@@ -445,34 +456,36 @@ void vr_assist(Vr* self, void* unused, t_assist_function io, long index, char* s
 
 
 void ext_main(void* r) {
+
+	ps_jit_gl_texture = gensym("jit_gl_texture");
+	ps_glid = gensym("glid");
+
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
 	class_addmethod(this_class, (method)vr_assist,"assist",A_CANT,0);
 	
-	/*
-	long ob3d_flags = JIT_OB3D_NO_MATRIXOUTPUT 
-					| JIT_OB3D_DOES_UI
-					| JIT_OB3D_NO_ROTATION_SCALE
-					| JIT_OB3D_NO_POLY_VARS
-					| JIT_OB3D_NO_BLEND
-					| JIT_OB3D_NO_TEXTURE
-					| JIT_OB3D_NO_MATRIXOUTPUT
-					| JIT_OB3D_AUTO_ONLY
-					| JIT_OB3D_NO_DEPTH
-					| JIT_OB3D_NO_ANTIALIAS
-					| JIT_OB3D_NO_FOG
-					| JIT_OB3D_NO_LIGHTING_MATERIAL
-					| JIT_OB3D_NO_SHADER
-					| JIT_OB3D_NO_BOUNDS
-					| JIT_OB3D_NO_COLOR
+	long ob3d_flags = jit_ob3d_flags::NO_MATRIXOUTPUT 
+					| jit_ob3d_flags::DOES_UI
+					| jit_ob3d_flags::NO_ROTATION_SCALE
+					| jit_ob3d_flags::NO_POLY_VARS
+					| jit_ob3d_flags::NO_BLEND
+					| jit_ob3d_flags::NO_TEXTURE
+					| jit_ob3d_flags::NO_MATRIXOUTPUT
+					| jit_ob3d_flags::AUTO_ONLY
+					| jit_ob3d_flags::NO_DEPTH
+					| jit_ob3d_flags::NO_ANTIALIAS
+					| jit_ob3d_flags::NO_FOG
+					| jit_ob3d_flags::NO_LIGHTING_MATERIAL
+					| jit_ob3d_flags::NO_SHADER
+					| jit_ob3d_flags::NO_BOUNDS
+					| jit_ob3d_flags::NO_COLOR
 					;
 	void * ob3d = jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
 	// define our OB3D draw methods
 	//jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
-	jit_class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
-	jit_class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
+	class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
+	class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
 	// must register for ob3d use
-	jit_class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
-	*/
+	class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
 	
 // 	class_addmethod(this_class, (method)vr_connect, "connect", 0);
 // 	class_addmethod(this_class, (method)vr_disconnect, "disconnect", 0);
