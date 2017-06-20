@@ -34,6 +34,7 @@ extern "C" {
 
 static t_symbol * ps_glid;
 static t_symbol * ps_jit_gl_texture;
+static t_symbol * ps_viewport;
 
 // jitter uses xyzw format
 // glm:: uses wxyz format
@@ -84,6 +85,8 @@ struct Vr {
 	t_atom_long fbo_texture_dim[2];
 	
 	Vr(t_symbol * drawto) {
+		// init Max object:
+		jit_ob3d_new(this, drawto);
 		// outlets create in reverse order:
 		outlet_msg = outlet_new(&ob, NULL);
 		//outlet_video = outlet_new(&ob, "jit_gl_texture");
@@ -135,10 +138,20 @@ struct Vr {
 	// will dump a lot of information to the last outlet
 	void configure() {
 		if (!connected) return;
+		t_atom a[6];
 		
 		// TODO get driver details & output
 		// get recommended texture dim & output
 		// initialize camera matrices, frusta, etc. & output
+		
+		// set camera viewports:
+		atom_setfloat(a + 0, 0.);
+		atom_setfloat(a + 1, 0.);
+		atom_setfloat(a + 2, 0.5);
+		atom_setfloat(a + 3, 1.);
+		outlet_anything(outlet_eye[0], ps_viewport, 4, a);
+		atom_setfloat(a + 0, 0.5);
+		outlet_anything(outlet_eye[1], ps_viewport, 4, a);
 	}
 	
 	// Jitter GL context changed, need to reallocate GPU objects
@@ -467,16 +480,17 @@ void vr_assist(Vr* self, void* unused, t_assist_function io, long index, char* s
 
 void ext_main(void* r) {
 
+	//common_symbols_init(); // not in max-api?
+	
 	ps_jit_gl_texture = gensym("jit_gl_texture");
 	ps_glid = gensym("glid");
+	ps_viewport = gensym("viewport");
 
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
-	class_addmethod(this_class, (method)vr_assist,"assist",A_CANT,0);
 	
-
 	long ob3d_flags = jit_ob3d_flags::NO_MATRIXOUTPUT 
-					| jit_ob3d_flags::DOES_UI
-					| jit_ob3d_flags::NO_ROTATION_SCALE
+					//| jit_ob3d_flags::DOES_UI
+					//| jit_ob3d_flags::NO_ROTATION_SCALE
 					| jit_ob3d_flags::NO_POLY_VARS
 					| jit_ob3d_flags::NO_BLEND
 					| jit_ob3d_flags::NO_TEXTURE
@@ -492,32 +506,29 @@ void ext_main(void* r) {
 					;
 	void * ob3d = jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
 	
-	/*
 	// define our OB3D draw methods
 	//jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
 	jit_class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
 	jit_class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
 	// must register for ob3d use
 	jit_class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
+
+	class_addmethod(this_class, (method)vr_assist,"assist",A_CANT,0);
 		
-// 	class_addmethod(this_class, (method)vr_connect, "connect", 0);
-// 	class_addmethod(this_class, (method)vr_disconnect, "disconnect", 0);
-// 	class_addmethod(this_class, (method)vr_configure, "configure", 0);
-// 	class_addmethod(this_class, (method)vr_info, "info", 0);
+ 	class_addmethod(this_class, (method)vr_connect, "connect", 0);
+ 	class_addmethod(this_class, (method)vr_disconnect, "disconnect", 0);
+ 	class_addmethod(this_class, (method)vr_configure, "configure", 0);
 	class_addmethod(this_class, (method)vr_bang, "bang", 0);
  	class_addmethod(this_class, (method)vr_jit_gl_texture, "jit_gl_texture", A_GIMME, 0);
-// 	class_addmethod(this_class, (method)vr_submit, "submit", 0);
 	
 	// vive-specific:
 	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
 	//class_addmethod(this_class, (method)vr_battery, "battery", A_GIMME, 0);
-
 	
 	CLASS_ATTR_FLOAT(this_class, "near_clip", 0, Vr, near_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "far_clip", NULL, vr_far_clip_set);
-*/
 	
 	class_register(CLASS_BOX, this_class);
 }
