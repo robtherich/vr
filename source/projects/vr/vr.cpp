@@ -469,6 +469,7 @@ void ext_main(void* r) {
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
 	class_addmethod(this_class, (method)vr_assist,"assist",A_CANT,0);
 	
+
 	long ob3d_flags = jit_ob3d_flags::NO_MATRIXOUTPUT 
 					| jit_ob3d_flags::DOES_UI
 					| jit_ob3d_flags::NO_ROTATION_SCALE
@@ -492,7 +493,7 @@ void ext_main(void* r) {
 	class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
 	// must register for ob3d use
 	class_addmethod(this_class, (method)jit_object_register, "register", A_CANT, 0L);
-	
+	/*	
 // 	class_addmethod(this_class, (method)vr_connect, "connect", 0);
 // 	class_addmethod(this_class, (method)vr_disconnect, "disconnect", 0);
 // 	class_addmethod(this_class, (method)vr_configure, "configure", 0);
@@ -505,6 +506,7 @@ void ext_main(void* r) {
 	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
 	//class_addmethod(this_class, (method)vr_battery, "battery", A_GIMME, 0);
 
+	*/
 	CLASS_ATTR_FLOAT(this_class, "near_clip", 0, Vr, near_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
