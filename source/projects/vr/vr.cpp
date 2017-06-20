@@ -29,8 +29,17 @@ extern "C" {
 	void * jit_object_register(void *x, c74::max::t_symbol *s);
 }
 
+// Oculus:
+#include "OVR_CAPI.h"
+#include "OVR_CAPI_GL.h"
+// Vive:
+// The OpenVR SDK:
+#include "openvr.h"
+
 #include "al_math.h"
 
+
+static bool oculus_initialized = 0;
 
 static t_symbol * ps_glid;
 static t_symbol * ps_jit_gl_texture;
@@ -52,6 +61,52 @@ glm::quat quat_from_jitter(t_jit_quat const & v) {
 glm::quat quat_to_jitter(glm::quat const & v) {
 	return glm::quat(v.x, v.y, v.z, v.w);
 }
+
+
+void oculusrift_quit() {
+	if (oculus_initialized) ovr_Shutdown();
+	oculus_initialized = 0;
+}
+
+int oculusrift_init() {
+	if (oculus_initialized) return 1;
+
+	// init OVR SDK
+	ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
+	ovrResult result = ovr_Initialize(&initParams);
+	if (OVR_FAILURE(result)) {
+		object_error(0, "LibOVR: failed to initialize library");
+		ovrErrorInfo errorInfo;
+		ovr_GetLastErrorInfo(&errorInfo);
+		object_error(0, "ovr_Initialize failed: %s", errorInfo.ErrorString);
+		/*
+		switch (result) {
+		case ovrError_Initialize: object_error(NULL, "Generic initialization error."); break;
+		case ovrError_LibLoad: object_error(NULL, "Couldn't load LibOVRRT."); break;
+		case ovrError_LibVersion: object_error(NULL, "LibOVRRT version incompatibility."); break;
+		case ovrError_ServiceConnection: object_error(NULL, "Couldn't connect to the OVR Service."); break;
+		case ovrError_ServiceVersion: object_error(NULL, "OVR Service version incompatibility."); break;
+		case ovrError_IncompatibleOS: object_error(NULL, "The operating system version is incompatible."); break;
+		case ovrError_DisplayInit: object_error(NULL, "Unable to initialize the HMD display."); break;
+		case ovrError_ServerStart:  object_error(NULL, "Unable to start the server. Is it already running?"); break;
+		case ovrError_Reinitialization: object_error(NULL, "Attempted to re-initialize with a different version."); break;
+		default: object_error(NULL, "unknown initialization error."); break;
+		}*/
+		oculus_initialized = 0;
+	}
+	else {
+
+		quittask_install((method)oculusrift_quit, NULL);
+
+		ovr_IdentifyClient("EngineName: Max/MSP/Jitter\n"
+			"EngineVersion: 7\n"
+			"EnginePluginName: [oculusrift]\n"
+			"EngineEditor: true");
+		oculus_initialized = 1;
+	}
+	return oculus_initialized;
+}
+
 
 #include <string>
 #include <fstream>
@@ -102,6 +157,9 @@ struct Vr {
 		fbo_texture_dim[0] = 1920;
 		fbo_texture_dim[1] = 1080;
 		
+
+		// try to see if the Oculus driver is available:
+		if (!oculus_initialized) oculusrift_init();
 	}
 
 	~Vr() {
@@ -482,10 +540,10 @@ void vr_assist(Vr* self, void* unused, t_assist_function io, long index, char* s
 }
 
 
+
+
 void ext_main(void* r) {
 
-	//common_symbols_init(); // not in max-api?
-	
 	ps_jit_gl_texture = gensym("jit_gl_texture");
 	ps_glid = gensym("glid");
 	ps_viewport = gensym("viewport");
