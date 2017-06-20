@@ -10,17 +10,23 @@
 
 #include "c74_jitter.h"
 
+using namespace c74::max;
+
 extern "C" {
 	#include "jit.gl.h"
+
+	// needed this for glFrameBuffer / GL_FRAMEBUFFER symbols
+	// (and needed to comment out the jit.common.h include)
+	#include "jit.gl.procs.h"
+	#include "jit.gl.support.h"
 	
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
-	void * jit_object_findregistered(c74::max::t_symbol *s);
-	void * jit_object_register(void *x, c74::max::t_symbol *s);
+	void * jit_object_findregistered(t_symbol *s);
+	void * jit_object_register(void *x, t_symbol *s);
 }
 
 #include "al_math.h"
 
-using namespace c74::max;
 
 static t_symbol * ps_glid;
 static t_symbol * ps_jit_gl_texture;
