@@ -78,7 +78,7 @@ glm::quat quat_to_jitter(glm::quat const & v) {
 }
 
 glm::quat from_ovr(ovrQuatf const q) {
-	return glm::quat(q.x, q.y, q.z, q.w);
+	return glm::quat(q.w, q.x, q.y, q.z);
 }
 
 glm::vec3 from_ovr(ovrVector3f const v) {
@@ -112,12 +112,16 @@ struct Vr {
 
 	glm::vec3 view_position;
 	glm::quat view_quat;
+	glm::mat4 view_mat; // aka modelview_mat
+	glm::mat4 eye_mat[2]; // pose of each eye, in tracking space
 
 	// guts:
 	
 	// FBO & texture that the scene is copied into
 	// (we can't submit the jit_gl_texture directly)
-	GLuint fbo_id, rbo_id, fbo_texture_id;
+	GLuint fbo_id = 0;
+	GLuint rbo_id = 0;
+	GLuint fbo_texture_id = 0;
 	t_atom_long fbo_texture_dim[2];
 
 	// driver-specific:
@@ -132,8 +136,8 @@ struct Vr {
 		//ovrSizei pTextureDim;
 		ovrTextureSwapChain textureChain = 0;
 		ovrMirrorTexture mirrorTexture;
-		long long frameIndex;
-		double sensorSampleTime;    // sensorSampleTime is fed into the layer later
+		long long frameIndex = 0;
+		double sensorSampleTime = 0.f;    // sensorSampleTime is fed into the layer later
 		int max_fov = 0; // use default field of view; set to 1 for maximum field of view
 		float pixel_density = 1.f;
 		int tracking_level = (int)ovrTrackingOrigin_FloorLevel;
@@ -175,6 +179,15 @@ struct Vr {
 		// some whatever defaults, will get overwritten when driver connects
 		fbo_texture_dim[0] = 1920;
 		fbo_texture_dim[1] = 1080;
+
+		// default eye positions (for offline testing)
+		for (int eye = 0; eye < 2; eye++) {
+			float ipd = 0.61; // an average adult
+			float eye_height = 1.59;
+			float eye_forward = 0.095; // a typical distance from center of head to eye plane
+			glm::vec3 p(eye ? ipd / 2.f : -ipd / 2.f, eye_height, -eye_forward);
+			eye_mat[eye] = glm::translate(glm::mat4(1.0f), p);
+		}
 	}
 
 	~Vr() {
@@ -187,29 +200,76 @@ struct Vr {
 		// actually delete object
 		max_jit_object_free(this);
 	}
-	
+
+	// Jitter GL context changed, need to reallocate GPU objects
+	// happens on construction (if context already existed)
+	// or when gl context is created
+	// e.g. when creating jit.world or entering/leaving fullscreen
+	t_jit_err dest_changed() {
+		object_post(&ob, "dest_changed");
+		// mark drawto gpu context as usable
+		// might not allocate gpu resources immediately, depends on whether driver is also connected
+		dest_ready = 1;
+
+		// try to connect:
+		if (!connected) connect();
+
+		if (connected) {
+			create_gpu_resources();
+		}
+		return JIT_ERR_NONE;
+	}
+
+	// Jitter GL context closing, need to destroy GPU objects
+	// happens on destruction of object (if context already existed)
+	// or when gl context is destroyed
+	// e.g. when deleting jit.world or entering/leaving fullscreen
+	t_jit_err dest_closing() {
+		object_post(&ob, "dest_closing");
+
+		// automatically disconnect at this point
+		// since without a Jitter GPU context, there's nothing we can do
+		// and disconnecting will free up the driver for other connections
+		// e.g. as needed when entering/leaving fullscreen
+		disconnect();
+
+		// mark drawto gpu context as unusable
+		dest_ready = 0;
+
+		release_gpu_resources();
+
+		return JIT_ERR_NONE;
+	}
+
 	// attempt to acquire the HMD
-	void connect() {
-		if (connected) disconnect();
+	bool connect() {
+		if (connected) return true; // because we're already connected!
+		object_post(&ob, "connect");
 
 		// TODO driver specific
 		// try to see if the Oculus driver is available:
-		if (!(oculusrift_init() && oculus_connect())) return;
-		
+		if (!oculus_connect()) {
+			return false;
+		}
+
 		// if successful:
 		connected = 1;
-		
+
+		object_post(&ob, "connected");
+
 		configure();
 
 		// if gpu is ready, go ahead & make what we need
 		if (dest_ready) {
 			create_gpu_resources();
 		}
+		return true;
 	}
 	
 	// release the HMD
 	void disconnect() {
 		if (!connected) return;
+		object_post(&ob, "disconnect");
 
 		// TODO: driver-specific stuff
 		oculus_disconnect();
@@ -220,6 +280,7 @@ struct Vr {
 	// called whenever HMD properties change
 	// will dump a lot of information to the last outlet
 	void configure() {
+		object_post(&ob, "configure");
 		t_atom a[6];
 		
 		if (connected) {
@@ -250,78 +311,53 @@ struct Vr {
 			
 	}
 	
-	// Jitter GL context changed, need to reallocate GPU objects
-	// happens on construction (if context already existed)
-	// or when gl context is created
-	// e.g. when creating jit.world or entering/leaving fullscreen
-	t_jit_err dest_changed() {
-		// mark drawto gpu context as usable
-		// might not allocate gpu resources immediately, depends on whether driver is also connected
-		dest_ready = 1;
-
-		// try to connect:
-		if (!connected) connect();
-
-		if (connected) {
-			create_gpu_resources();
-		}
-		return JIT_ERR_NONE;
-	}
-
-	// Jitter GL context closing, need to destroy GPU objects
-	// happens on destruction of object (if context already existed)
-	// or when gl context is destroyed
-	// e.g. when deleting jit.world or entering/leaving fullscreen
-	t_jit_err dest_closing() {
-
-		// automatically disconnect at this point
-		// since without a Jitter GPU context, there's nothing we can do
-		// and disconnecting will free up the driver for other connections
-		// e.g. as needed when entering/leaving fullscreen
-		disconnect();
-
-		// mark drawto gpu context as unusable
-		dest_ready = 0;
-
-		release_gpu_resources();
-
-		return JIT_ERR_NONE;
-	}
 
 	void create_gpu_resources() {
-		if (!connected && !dest_ready) return;
+		if (!connected && !dest_ready) return; // we're not ready yet
+		if (fbo_id) return; // we already did it
+
+		object_post(&ob, "create_gpu_resources");
 
 		// get drawto context:
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
-		
-		// create the FBO used to pass the scene texture to the driver:
-		create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
 
 		// TODO driver specific:
 		oculus_create_gpu_resources();
 		
+		// create the FBO used to pass the scene texture to the driver:
+		if (!fbo_id) {
+			glGenFramebuffersEXT(1, &fbo_id);
+			object_post(&ob, "created fbo %d", fbo_id);
+		}
+		
+		//create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
+	
 		// TODO gpu resources for mirror, videocamera,
+
+		object_post(&ob, "gpu resources created");
+
 	}
 
 	void release_gpu_resources() {
+		
 		// release associated resources:
 		if (fbo_id) {
+			object_post(&ob, "release_gpu_resources");
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
-		}
-		if (fbo_texture_id) {
-			glDeleteTextures(1, &fbo_texture_id);
-			fbo_texture_id = 0;
-		}
-		if (rbo_id) {
-			glDeleteRenderbuffersEXT(1, &rbo_id);
-			rbo_id = 0;
-		}
 
-		// TODO gpu resources for mirror, videocamera, 
+			if (fbo_texture_id) {
+				glDeleteTextures(1, &fbo_texture_id);
+				fbo_texture_id = 0;
+			}
+			if (rbo_id) {
+				glDeleteRenderbuffersEXT(1, &rbo_id);
+				rbo_id = 0;
+			}
 
-		// TODO driver specific
-		oculus_release_gpu_resources();
+			// TODO driver specific
+			oculus_release_gpu_resources();
+		}
 	}
 	
 	// poll HMD for events
@@ -335,10 +371,8 @@ struct Vr {
 		// get desired view matrix (from @position and @quat attrs)
 		object_attr_getfloat_array(this, _jit_sym_position, 3, &view_position.x);
 		object_attr_getfloat_array(this, _jit_sym_quat, 4, &view_quat.x);
-		glm::mat4 modelview_mat = glm::translate(glm::mat4(1.0f), view_position) * mat4_cast(quat_from_jitter(view_quat));
+		view_mat = glm::translate(glm::mat4(1.0f), view_position) * mat4_cast(view_quat);
 		
-
-
 		// TODO: video (or separate message for this?)
 		
 		// TODO: driver poll events
@@ -350,6 +384,26 @@ struct Vr {
 		
 		// compute camera poses & output to jit.gl.cameras 
 		// (also output frusta, viewport, ?)
+
+
+		// always output camera poses here (so it works even if not currently tracking)
+		t_atom a[4];
+		for (int eye = 0; eye < 2; eye++) {
+			glm::mat4 world_mat = view_mat * eye_mat[eye];
+
+			glm::vec3 p = glm::vec3(world_mat[3]); // the translation component
+			atom_setfloat(a + 0, p.x);
+			atom_setfloat(a + 1, p.y);
+			atom_setfloat(a + 2, p.z);
+			outlet_anything(outlet_eye[eye], _jit_sym_position, 3, a);
+
+			glm::quat q = glm::quat_cast(world_mat); // the orientation component
+			atom_setfloat(a + 0, q.x);
+			atom_setfloat(a + 1, q.y);
+			atom_setfloat(a + 2, q.z);
+			atom_setfloat(a + 3, q.w);
+			outlet_anything(outlet_eye[eye], _jit_sym_quat, 4, a);
+		}
 	}
 	
 	// triggered by "jit_gl_texture" message:
@@ -367,11 +421,9 @@ struct Vr {
 
 		// get input properties:
 		GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
-		// get input texture dimensions
 		t_atom_long input_texture_dim[2];
 		object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
 
-		
 		if (connected) {
 			// submit it to the driver
 			if (!fbo_id) {
@@ -397,38 +449,12 @@ struct Vr {
 	
 	//////////////////////////////////////////////////////////////////////////////////////
 	
-	bool create_fbo(GLuint * fbo_id_ptr, GLuint * rbo_id_ptr, GLuint * fbo_texture_id_ptr, t_atom_long fbo_texture_dim[2]) {
-		glGenFramebuffersEXT(1, fbo_id_ptr);
-		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, *fbo_id_ptr);
-		
-		glGenRenderbuffersEXT(1, rbo_id_ptr);
-		glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, *rbo_id_ptr);
-		glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, fbo_texture_dim[0], fbo_texture_dim[1]);
-		glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, *rbo_id_ptr);
-
-		glGenTextures(1, fbo_texture_id_ptr);
-		glBindTexture(GL_TEXTURE_2D, *fbo_texture_id_ptr);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, *fbo_texture_id_ptr, 0);
-
-		// check FBO status
-		GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
-		if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
-			object_error(&ob, "failed to create Jitter FBO");
-			return false;
-		}
-
-		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
-		return true;
-	}
-	
 	bool copy_texture_to_fbo(GLuint 		input_texture_id, 
 							 t_atom_long 	input_texture_dim[2],
 							 GLuint 		fbo_id, 
 							 GLuint 		fbo_texture_id, 
-							 t_atom_long 	fbo_texture_dim[2]) {
+							 t_atom_long 	fbo_texture_dim[2],
+							 bool flipY = true) {
 		// copy our glid source into the inFBO destination
 		// save some state
 		GLint previousFBO;	// make sure we pop out to the right FBO
@@ -460,10 +486,10 @@ struct Vr {
 			glPushMatrix();
 			glLoadIdentity();
 
-			/*
+			
 			glClearColor(0, 0, 0, 1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			
+			/*
 			glColor4f(1.0, 0.0, 1.0, 1.0);
 */
 			glActiveTexture(GL_TEXTURE0);
@@ -480,10 +506,10 @@ struct Vr {
 			// move to VA for rendering
 			// TODO flip vertical?
 			GLfloat tex_coords[] = {
-				(GLfloat)input_texture_dim[0], (GLfloat)input_texture_dim[1],
-				0.0, (GLfloat)input_texture_dim[1],
-				0.0, 0.,
-				(GLfloat)input_texture_dim[0], 0.
+				(GLfloat)input_texture_dim[0], flipY ? 0.f : (GLfloat)input_texture_dim[1],
+				0.0, flipY ? 0.f : (GLfloat)input_texture_dim[1],
+				0.0, flipY ? (GLfloat)input_texture_dim[1] : 0.f,
+				(GLfloat)input_texture_dim[0], flipY ? (GLfloat)input_texture_dim[1] : 0.f
 			};
 
 			GLfloat verts[] = {
@@ -561,11 +587,14 @@ struct Vr {
 
 	int oculusrift_init() {
 		if (oculus_initialized) return 1;
+		object_post(&ob, "oculus init");
 
 		// init OVR SDK
 		ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
 		ovrResult result = ovr_Initialize(&initParams);
 		if (OVR_FAILURE(result)) {
+			oculus_initialized = 0;
+
 			object_error(0, "LibOVR: failed to initialize library");
 			// if only this worked:
 			//ovrErrorInfo errorInfo;
@@ -584,7 +613,6 @@ struct Vr {
 			case ovrError_Reinitialization: object_error(&ob, "Attempted to re-initialize with a different version."); break;
 			default: object_error(&ob, "unknown initialization error."); break;
 			}
-			oculus_initialized = 0;
 		}
 		else {
 
@@ -592,14 +620,21 @@ struct Vr {
 
 			ovr_IdentifyClient("EngineName: Max/MSP/Jitter\n"
 				"EngineVersion: 7\n"
-				"EnginePluginName: [oculusrift]\n"
+				"EnginePluginName: [vr]\n"
 				"EngineEditor: true");
 			oculus_initialized = 1;
+
+
+			object_post(&ob, "oculus initialized OK");
 		}
 		return oculus_initialized;
 	}
 
 	bool oculus_connect() {
+		if (!oculusrift_init()) return false;
+
+		object_post(&ob, "oculus connect");
+
 		ovrResult result = ovr_Create(&oculus.session, &oculus.luid);
 		if (OVR_FAILURE(result)) {
 			ovrErrorInfo errInfo;
@@ -611,15 +646,13 @@ struct Vr {
 		}
 
 		object_post(&ob, "LibOVR SDK %s, runtime %s", OVR_VERSION_STRING, ovr_GetVersionString());
-		
-		// update our session status
-		ovr_GetSessionStatus(oculus.session, &oculus.status);
 
 		return true;
 	}
 
 	void oculus_disconnect() {
 		if (oculus.session) {
+			object_post(&ob, "oculus disconnect");
 
 			release_gpu_resources();
 
@@ -629,6 +662,7 @@ struct Vr {
 	}
 
 	void oculus_configure() {
+		object_post(&ob, "oculus configure");
 		if (!oculus.session) {
 			object_error(&ob, "no Oculus session to configure");
 			return;
@@ -725,11 +759,14 @@ struct Vr {
 			// Prefer using this origin when your application requires matching user's current physical head pose to a virtual head pose without any regards to a the height of the floor. Cockpit-based, or 3rd-person experiences are ideal candidates. When used, all poses in ovrTrackingState are reported as an offset transform from the profile calibrated or recentered HMD pose. 
 			ovr_SetTrackingOriginType(oculus.session, ovrTrackingOrigin_EyeLevel);
 		};
+
+		object_post(&ob, "oculus configured");
 	}
 
 	bool oculus_create_gpu_resources() {
 		if (!oculus.session) return false;
 		if (!oculus.textureChain) {
+			object_post(&ob, "oculus create gpu");
 			ovrTextureSwapChainDesc desc = {};
 			desc.Type = ovrTexture_2D;
 			desc.ArraySize = 1;
@@ -747,6 +784,7 @@ struct Vr {
 				return false;
 			}
 
+			// unused?
 			int length = 0;
 			ovr_GetTextureSwapChainLength(oculus.session, oculus.textureChain, &length);
 
@@ -754,11 +792,14 @@ struct Vr {
 			oculus.layer.ColorTexture[0] = oculus.textureChain;
 			oculus.layer.ColorTexture[1] = oculus.textureChain;
 
+			object_post(&ob, "oculus gpu resources created");
+
 		}
 		return true;
 	}
 
 	void oculus_release_gpu_resources() {
+		object_post(&ob, "oculus release gpu");
 		if (oculus.session && oculus.textureChain) {
 			ovr_DestroyTextureSwapChain(oculus.session, oculus.textureChain);
 			oculus.textureChain = 0;
@@ -779,10 +820,8 @@ struct Vr {
 		}
 		if (oculus.status.ShouldRecenter) {
 			ovr_RecenterTrackingOrigin(oculus.session);
-
 			/*
 			Expose attr to defeat this?
-
 			Some applications may have reason to ignore the request or to implement it
 			via an internal mechanism other than via ovr_RecenterTrackingOrigin. In such
 			cases the application can call ovr_ClearShouldRecenterFlag() to cause the
@@ -818,9 +857,7 @@ struct Vr {
 		if (oculus.max_fov) {
 			oculus.eyeRenderDesc[0] = ovr_GetRenderDesc(oculus.session, ovrEye_Left, oculus.hmd.MaxEyeFov[0]);
 			oculus.eyeRenderDesc[1] = ovr_GetRenderDesc(oculus.session, ovrEye_Right, oculus.hmd.MaxEyeFov[1]);
-
-		}
-		else {
+		} else {
 			oculus.eyeRenderDesc[0] = ovr_GetRenderDesc(oculus.session, ovrEye_Left, oculus.hmd.DefaultEyeFov[0]);
 			oculus.eyeRenderDesc[1] = ovr_GetRenderDesc(oculus.session, ovrEye_Right, oculus.hmd.DefaultEyeFov[1]);
 		}
@@ -833,11 +870,9 @@ struct Vr {
 		ovrTrackingState ts = ovr_GetTrackingState(oculus.session, displayMidpointSeconds, ovrTrue);
 		if (ts.StatusFlags & (ovrStatus_OrientationTracked | ovrStatus_PositionTracked)) {
 
-			// get current head pose
-			const ovrPosef& pose = ts.HeadPose.ThePose;
 			// Computes offset eye poses based on headPose returned by ovrTrackingState.
 			// use the tracking state to update the layers (part of how timewarp works)
-			ovr_CalcEyePoses(pose, oculus.hmdToEyeViewOffset, oculus.layer.RenderPose);
+			ovr_CalcEyePoses(ts.HeadPose.ThePose, oculus.hmdToEyeViewOffset, oculus.layer.RenderPose);
 
 			// update the camera poses/frusta accordingly
 			for (int eye = 0; eye < 2; eye++) {
@@ -846,19 +881,11 @@ struct Vr {
 				oculus.layer.Fov[eye] = oculus.eyeRenderDesc[eye].Fov;
 				oculus.layer.SensorSampleTime = oculus.sensorSampleTime;
 
-				const glm::vec3 p = from_ovr(oculus.layer.RenderPose[eye].Position) + view_position;
-				atom_setfloat(a + 0, p.x);
-				atom_setfloat(a + 1, p.y);
-				atom_setfloat(a + 2, p.z);
-				outlet_anything(outlet_eye[eye], _jit_sym_position, 3, a);
-
-				glm::quat eye_quat = from_ovr(oculus.layer.RenderPose[eye].Orientation) * view_quat;
-				atom_setfloat(a + 0, eye_quat.x);
-				atom_setfloat(a + 1, eye_quat.y);
-				atom_setfloat(a + 2, eye_quat.z);
-				atom_setfloat(a + 3, eye_quat.w);
-				outlet_anything(outlet_eye[eye], _jit_sym_quat, 4, a);
-
+				// get the tracking-space pose & convert to mat4
+				const ovrPosef& pose = oculus.layer.RenderPose[eye];
+				eye_mat[eye] = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position)) 
+							 * mat4_cast(from_ovr(pose.Orientation));
+				
 				// TODO: proj matrix doesn't need to be calculated every frame; only when fov/near/far/layer data changes
 				// projection
 				const ovrFovPort& fov = oculus.layer.Fov[eye];
@@ -876,6 +903,7 @@ struct Vr {
 				t_symbol * id = ps_head;
 				
 				// raw tracking data
+				const ovrPosef& pose = ts.HeadPose.ThePose;
 				glm::vec3 p = from_ovr(pose.Position);
 				glm::quat q = from_ovr(pose.Orientation);
 
@@ -1007,7 +1035,8 @@ struct Vr {
 		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
 
 		// TODO: check success
-		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim, fbo_id, oculus_target_texture_id, fbo_texture_dim)) {
+		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim, 
+			fbo_id, oculus_target_texture_id, fbo_texture_dim, true)) {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
