@@ -44,9 +44,24 @@ static bool oculus_initialized = 0;
 static t_symbol * ps_glid;
 static t_symbol * ps_jit_gl_texture;
 static t_symbol * ps_viewport;
+static t_symbol * ps_frustum;
+static t_symbol * ps_tracked_position;
+static t_symbol * ps_tracked_quat;
+
+static t_symbol * ps_head;
+static t_symbol * ps_left_hand;
+static t_symbol * ps_right_hand;
+
+static t_symbol * ps_velocity;
+static t_symbol * ps_angular_velocity;
+static t_symbol * ps_trigger;
+static t_symbol * ps_hand_trigger;
+static t_symbol * ps_thumbstick;
+static t_symbol * ps_buttons;
 
 // jitter uses xyzw format
-// glm:: uses wxyz format
+// glm constructor uses wxyz format
+// though the data is stored in xyzw
 // xyzw -> wxyz
 glm::quat quat_from_jitter(glm::quat const & v) {
 	return glm::quat(v.z, v.w, v.x, v.y);
@@ -62,7 +77,13 @@ glm::quat quat_to_jitter(glm::quat const & v) {
 	return glm::quat(v.x, v.y, v.z, v.w);
 }
 
+glm::quat from_ovr(ovrQuatf const q) {
+	return glm::quat(q.x, q.y, q.z, q.w);
+}
 
+glm::vec3 from_ovr(ovrVector3f const v) {
+	return glm::vec3(v.x, v.y, v.z);
+}
 
 
 #include <string>
@@ -79,7 +100,6 @@ struct Vr {
 	void * outlet_tracking;
 	//void * outlet_node;
 	void * outlet_eye[2];
-	//void * outlet_controller[2];
 	void * outlet_tex;
 	
 	// attrs:
@@ -89,7 +109,10 @@ struct Vr {
 	// configuration:
 	int connected = 0;
 	int dest_ready = 0;
-	
+
+	glm::vec3 view_position;
+	glm::quat view_quat;
+
 	// guts:
 	
 	// FBO & texture that the scene is copied into
@@ -99,17 +122,43 @@ struct Vr {
 
 	// driver-specific:
 	struct {
-		ovrSession session;
+		ovrSession session = 0;
 		ovrSessionStatus status;
 		ovrHmdDesc hmd;
 		ovrGraphicsLuid luid;
 		ovrEyeRenderDesc eyeRenderDesc[2];
 		ovrVector3f      hmdToEyeViewOffset[2];
 		ovrLayerEyeFov layer;
-		ovrSizei pTextureDim;
-		ovrTextureSwapChain textureChain;
+		//ovrSizei pTextureDim;
+		ovrTextureSwapChain textureChain = 0;
 		ovrMirrorTexture mirrorTexture;
+		long long frameIndex;
+		double sensorSampleTime;    // sensorSampleTime is fed into the layer later
+		int max_fov = 0; // use default field of view; set to 1 for maximum field of view
+		float pixel_density = 1.f;
+		int tracking_level = (int)ovrTrackingOrigin_FloorLevel;
 	} oculus;
+
+	struct {
+		vr::IVRSystem *	hmd;
+		t_symbol * driver;
+		t_symbol * display;
+		vr::TrackedDevicePose_t pRenderPoseArray[vr::k_unMaxTrackedDeviceCount];
+		glm::mat4 mDevicePose[vr::k_unMaxTrackedDeviceCount];
+		glm::mat4 mHMDPose;
+		glm::mat4 m_mat4viewEye[2];
+		glm::mat4 m_mat4projectionEye[2];
+
+		vr::IVRRenderModels * mRenderModels;
+		vr::IVRTrackedCamera * mCamera;
+		vr::TrackedCameraHandle_t m_hTrackedCamera;
+		uint32_t	m_nCameraFrameWidth;
+		uint32_t	m_nCameraFrameHeight;
+		uint32_t	m_nCameraFrameBufferSize;
+		uint32_t	m_nLastFrameSequence;
+		uint8_t		* m_pCameraFrameBuffer;
+		vr::EVRTrackedCameraFrameType frametype;
+	} vive;
 	
 	Vr(t_symbol * drawto) {
 		// init Max object:
@@ -117,8 +166,6 @@ struct Vr {
 		// outlets create in reverse order:
 		outlet_msg = outlet_new(&ob, NULL);
 		//outlet_video = outlet_new(&ob, "jit_gl_texture");
-		//outlet_controller[1] = outlet_new(&ob, NULL);
-		//outlet_controller[0] = outlet_new(&ob, NULL);
 		outlet_tracking = outlet_new(&ob, NULL);
 		//outlet_node = outlet_new(&ob, NULL);
 		outlet_eye[1] = outlet_new(&ob, NULL);
@@ -145,11 +192,9 @@ struct Vr {
 	void connect() {
 		if (connected) disconnect();
 
+		// TODO driver specific
 		// try to see if the Oculus driver is available:
-		if (!(oculus_initialized || oculusrift_init())) return;
-		
-		// TODO: driver-specific stuff
-		if (!oculus_connect()) return;
+		if (!(oculusrift_init() && oculus_connect())) return;
 		
 		// if successful:
 		connected = 1;
@@ -179,13 +224,22 @@ struct Vr {
 		
 		if (connected) {
 			// TODO get driver details & output
+			oculus_configure();
 			// get recommended texture dim & output
 			// initialize camera matrices, frusta, etc. & output
 		}
+
+		// output recommended texture dim:
+		atom_setlong(a + 0, fbo_texture_dim[0]);
+		atom_setlong(a + 1, fbo_texture_dim[1]);
+		outlet_anything(outlet_msg, _jit_sym_dim, 2, a);
+
+		// output camera properties:
+		atom_setsym(a, ps_frustum);
+		outlet_anything(outlet_eye[0], gensym("projection_mode"), 1, a);
+		outlet_anything(outlet_eye[1], gensym("projection_mode"), 1, a);
 		
-		// now output camera properties:
-		
-		// set camera viewports:
+		// viewports:
 		atom_setfloat(a + 0, 0.);
 		atom_setfloat(a + 1, 0.);
 		atom_setfloat(a + 2, 0.5);
@@ -242,6 +296,9 @@ struct Vr {
 		
 		// create the FBO used to pass the scene texture to the driver:
 		create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
+
+		// TODO driver specific:
+		oculus_create_gpu_resources();
 		
 		// TODO gpu resources for mirror, videocamera,
 	}
@@ -262,6 +319,9 @@ struct Vr {
 		}
 
 		// TODO gpu resources for mirror, videocamera, 
+
+		// TODO driver specific
+		oculus_release_gpu_resources();
 	}
 	
 	// poll HMD for events
@@ -273,19 +333,17 @@ struct Vr {
 		if (!connected) return;
 		
 		// get desired view matrix (from @position and @quat attrs)
-		glm::vec3 m_position;
-		//object_attr_getfloat_array(this, _jit_sym_position, 3, &m_position.x);
-		object_attr_getfloat_array(this, _jit_sym_position, 3, &m_position.x);
+		object_attr_getfloat_array(this, _jit_sym_position, 3, &view_position.x);
+		object_attr_getfloat_array(this, _jit_sym_quat, 4, &view_quat.x);
+		glm::mat4 modelview_mat = glm::translate(glm::mat4(1.0f), view_position) * mat4_cast(quat_from_jitter(view_quat));
 		
-		//t_jit_quat jitquat;
-		glm::quat jitquat;
-		//object_attr_getfloat_array(this, _jit_sym_quat, 4, &jitquat.x);
-		object_attr_getfloat_array(this, _jit_sym_quat, 4, &jitquat.x);
-		glm::mat4 modelview_mat = glm::translate(glm::mat4(1.0f), m_position) * mat4_cast(quat_from_jitter(jitquat));
-		
+
+
 		// TODO: video (or separate message for this?)
 		
 		// TODO: driver poll events
+		oculus_bang();
+
 		// get tracking data
 		// output headset & controllers, both in worldspace and trackingspace
 		// output device states
@@ -571,6 +629,400 @@ struct Vr {
 			oculus.session = 0;
 		}
 	}
+
+	void oculus_configure() {
+		if (!oculus.session) {
+			object_error(&ob, "no Oculus session to configure");
+			return;
+		}
+
+		t_atom a[2];
+
+		// maybe never: support disabling tracking options via ovr_ConfigureTracking()
+
+		oculus.hmd = ovr_GetHmdDesc(oculus.session);
+		// Use hmd members and ovr_GetFovTextureSize() to determine graphics configuration
+
+		// TODO complete list of useful info from https://developer.oculus.com/documentation/pcsdk/latest/concepts/dg-sensor/
+#define HMD_CASE(T) case T: { \
+            atom_setsym(a, gensym( #T )); \
+            outlet_anything(outlet_msg, gensym("hmdType"), 1, a); \
+            break; \
+			        }
+		switch (oculus.hmd.Type) {
+			HMD_CASE(ovrHmd_CV1)
+				HMD_CASE(ovrHmd_DK1)
+				HMD_CASE(ovrHmd_DKHD)
+				HMD_CASE(ovrHmd_DK2)
+		default: {
+				atom_setsym(a, gensym("unknown"));
+				outlet_anything(outlet_msg, gensym("Type"), 1, a);
+			}
+		}
+#undef HMD_CASE
+		atom_setsym(a, gensym(oculus.hmd.SerialNumber));
+		outlet_anything(outlet_msg, gensym("serial"), 1, a);
+		atom_setsym(a, gensym(oculus.hmd.Manufacturer));
+		outlet_anything(outlet_msg, gensym("Manufacturer"), 1, a);
+		atom_setsym(a, gensym(oculus.hmd.ProductName));
+		outlet_anything(outlet_msg, gensym("ProductName"), 1, a);
+		atom_setlong(a, (oculus.hmd.VendorId));
+		outlet_anything(outlet_msg, gensym("VendorId"), 1, a);
+		atom_setlong(a, (oculus.hmd.ProductId));
+		outlet_anything(outlet_msg, gensym("ProductId"), 1, a);
+		atom_setlong(a, (oculus.hmd.AvailableHmdCaps));
+		outlet_anything(outlet_msg, gensym("AvailableHmdCaps"), 1, a);
+		atom_setlong(a, (oculus.hmd.DefaultHmdCaps));
+		outlet_anything(outlet_msg, gensym("DefaultHmdCaps"), 1, a);
+		atom_setlong(a, (oculus.hmd.AvailableTrackingCaps));
+		outlet_anything(outlet_msg, gensym("AvailableTrackingCaps"), 1, a);
+		atom_setlong(a, (oculus.hmd.DefaultTrackingCaps));
+		outlet_anything(outlet_msg, gensym("DefaultTrackingCaps"), 1, a);
+		atom_setfloat(a, (oculus.hmd.DisplayRefreshRate));
+		outlet_anything(outlet_msg, gensym("DisplayRefreshRate"), 1, a);
+		atom_setlong(a, oculus.hmd.FirmwareMajor);
+		atom_setlong(a + 1, oculus.hmd.FirmwareMinor);
+		outlet_anything(outlet_msg, gensym("Firmware"), 2, a);
+		ovrSizei resolution = oculus.hmd.Resolution;
+		atom_setlong(a + 0, resolution.w);
+		atom_setlong(a + 1, resolution.h);
+		outlet_anything(outlet_msg, gensym("resolution"), 2, a);
+
+		ovrSizei recommenedTex0Size, recommenedTex1Size;
+		//MaxEyeFov - Maximum optical field of view that can be practically rendered for each eye.
+		if (oculus.max_fov) {
+			recommenedTex0Size = ovr_GetFovTextureSize(oculus.session, ovrEye_Left, oculus.hmd.MaxEyeFov[0], oculus.pixel_density);
+			recommenedTex1Size = ovr_GetFovTextureSize(oculus.session, ovrEye_Right, oculus.hmd.MaxEyeFov[1], oculus.pixel_density);
+		}
+		else {
+			recommenedTex0Size = ovr_GetFovTextureSize(oculus.session, ovrEye_Left, oculus.hmd.DefaultEyeFov[0], oculus.pixel_density);
+			recommenedTex1Size = ovr_GetFovTextureSize(oculus.session, ovrEye_Right, oculus.hmd.DefaultEyeFov[1], oculus.pixel_density);
+		}
+		// Initialize our single full screen Fov layer.
+		// (needs to happen after textureset_create)
+		oculus.layer.Header.Type = ovrLayerType_EyeFov;
+		oculus.layer.Header.Flags = 0;// ovrLayerFlag_TextureOriginAtBottomLeft;   // Because OpenGL. was 0.
+		oculus.layer.Viewport[0].Pos.x = 0;
+		oculus.layer.Viewport[0].Pos.y = 0;
+		oculus.layer.Viewport[0].Size.w = recommenedTex0Size.w;
+		oculus.layer.Viewport[0].Size.h = recommenedTex0Size.h;
+		oculus.layer.Viewport[1].Pos.x = recommenedTex0Size.w;
+		oculus.layer.Viewport[1].Pos.y = 0;
+		oculus.layer.Viewport[1].Size.w = recommenedTex1Size.w;
+		oculus.layer.Viewport[1].Size.h = recommenedTex1Size.h;
+
+		// determine the recommended texture size for scene capture:
+		fbo_texture_dim[0] = recommenedTex0Size.w + recommenedTex1Size.w; // side-by-side
+		fbo_texture_dim[1] = AL_MAX(recommenedTex0Size.h, recommenedTex1Size.h);
+
+		switch (oculus.tracking_level) {
+		case int(ovrTrackingOrigin_FloorLevel) :
+			// FloorLevel will give tracking poses where the floor height is 0
+			// Tracking system origin reported at floor height.
+			// Prefer using this origin when your application requires the physical floor height to match the virtual floor height, such as standing experiences. When used, all poses in ovrTrackingState are reported as an offset transform from the profile calibrated floor pose. Calling ovr_RecenterTrackingOrigin will recenter the X & Z axes as well as yaw, but the Y-axis (i.e. height) will continue to be reported using the floor height as the origin for all poses.
+			ovr_SetTrackingOriginType(oculus.session, ovrTrackingOrigin_FloorLevel);
+			break;
+		default:
+			// Tracking system origin reported at eye (HMD) height.
+			// Prefer using this origin when your application requires matching user's current physical head pose to a virtual head pose without any regards to a the height of the floor. Cockpit-based, or 3rd-person experiences are ideal candidates. When used, all poses in ovrTrackingState are reported as an offset transform from the profile calibrated or recentered HMD pose. 
+			ovr_SetTrackingOriginType(oculus.session, ovrTrackingOrigin_EyeLevel);
+		};
+	}
+
+	bool oculus_create_gpu_resources() {
+		if (!oculus.session) return false;
+		if (!oculus.textureChain) {
+			ovrTextureSwapChainDesc desc = {};
+			desc.Type = ovrTexture_2D;
+			desc.ArraySize = 1;
+			desc.Width = fbo_texture_dim[0];
+			desc.Height = fbo_texture_dim[1];
+			desc.MipLevels = 1;
+			desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
+			desc.SampleCount = 1;
+			desc.StaticImage = ovrFalse;
+			ovrResult result = ovr_CreateTextureSwapChainGL(oculus.session, &desc, &oculus.textureChain);
+			if (result != ovrSuccess) {
+				ovrErrorInfo errInfo;
+				ovr_GetLastErrorInfo(&errInfo);
+				object_error(&ob, "failed to create texture set: %s", errInfo.ErrorString);
+				return false;
+			}
+
+			int length = 0;
+			ovr_GetTextureSwapChainLength(oculus.session, oculus.textureChain, &length);
+
+			// we can update the layer too here:
+			oculus.layer.ColorTexture[0] = oculus.textureChain;
+			oculus.layer.ColorTexture[1] = oculus.textureChain;
+
+		}
+		return true;
+	}
+
+	void oculus_release_gpu_resources() {
+		if (oculus.session && oculus.textureChain) {
+			ovr_DestroyTextureSwapChain(oculus.session, oculus.textureChain);
+			oculus.textureChain = 0;
+		}
+	}
+
+	void oculus_bang() {
+		if (!oculus.session) return;
+
+		ovrResult res = ovr_GetSessionStatus(oculus.session, &oculus.status);
+		if (oculus.status.ShouldQuit) {
+			// the HMD display will return to Oculus Home
+			// don't want to quit, but at least notify patcher:
+			outlet_anything(outlet_msg, gensym("quit"), 0, NULL);
+
+			disconnect();
+			return;
+		}
+		if (oculus.status.ShouldRecenter) {
+			ovr_RecenterTrackingOrigin(oculus.session);
+
+			/*
+			Expose attr to defeat this?
+
+			Some applications may have reason to ignore the request or to implement it
+			via an internal mechanism other than via ovr_RecenterTrackingOrigin. In such
+			cases the application can call ovr_ClearShouldRecenterFlag() to cause the
+			recenter request to be cleared.
+			*/
+		}
+
+		if (!oculus.status.HmdPresent) {
+			// TODO: disconnect?
+			return;
+		}
+		if (oculus.status.DisplayLost) {
+			/*
+			Destroy any TextureSwapChains or mirror textures.
+			Call ovrDestroy.
+			Poll ovrSessionStatus::HmdPresent until true.
+			Call ovrCreate to recreate the session.
+			Recreate any TextureSwapChains or mirror textures.
+			Resume the application.
+			ovrDetect() ??
+			*/
+		}
+
+		// TODO: expose these as gettable attrs?
+		//status.HmdMounted // true if the HMD is currently on the head
+		// status.IsVisible // True if the game or experience has VR focus and is visible in the HMD.
+
+		// TODO: does SDK provide notification of Rift being reconnected?
+
+		t_atom a[6];
+
+		// Call ovr_GetRenderDesc each frame to get the ovrEyeRenderDesc, as the returned values (e.g. HmdToEyeOffset) may change at runtime.
+		if (oculus.max_fov) {
+			oculus.eyeRenderDesc[0] = ovr_GetRenderDesc(oculus.session, ovrEye_Left, oculus.hmd.MaxEyeFov[0]);
+			oculus.eyeRenderDesc[1] = ovr_GetRenderDesc(oculus.session, ovrEye_Right, oculus.hmd.MaxEyeFov[1]);
+
+		}
+		else {
+			oculus.eyeRenderDesc[0] = ovr_GetRenderDesc(oculus.session, ovrEye_Left, oculus.hmd.DefaultEyeFov[0]);
+			oculus.eyeRenderDesc[1] = ovr_GetRenderDesc(oculus.session, ovrEye_Right, oculus.hmd.DefaultEyeFov[1]);
+		}
+		oculus.hmdToEyeViewOffset[0] = oculus.eyeRenderDesc[0].HmdToEyeOffset;
+		oculus.hmdToEyeViewOffset[1] = oculus.eyeRenderDesc[1].HmdToEyeOffset;
+
+		// now tracking data:
+		// Query the HMD for the predicted tracking state
+		double displayMidpointSeconds = ovr_GetPredictedDisplayTime(oculus.session, oculus.frameIndex);
+		ovrTrackingState ts = ovr_GetTrackingState(oculus.session, displayMidpointSeconds, ovrTrue);
+		if (ts.StatusFlags & (ovrStatus_OrientationTracked | ovrStatus_PositionTracked)) {
+
+			// get current head pose
+			const ovrPosef& pose = ts.HeadPose.ThePose;
+			// Computes offset eye poses based on headPose returned by ovrTrackingState.
+			// use the tracking state to update the layers (part of how timewarp works)
+			ovr_CalcEyePoses(pose, oculus.hmdToEyeViewOffset, oculus.layer.RenderPose);
+
+			// update the camera poses/frusta accordingly
+			for (int eye = 0; eye < 2; eye++) {
+
+				// update the layer info too:
+				oculus.layer.Fov[eye] = oculus.eyeRenderDesc[eye].Fov;
+				oculus.layer.SensorSampleTime = oculus.sensorSampleTime;
+
+				const glm::vec3 p = from_ovr(oculus.layer.RenderPose[eye].Position) + view_position;
+				atom_setfloat(a + 0, p.x);
+				atom_setfloat(a + 1, p.y);
+				atom_setfloat(a + 2, p.z);
+				outlet_anything(outlet_eye[eye], _jit_sym_position, 3, a);
+
+				glm::quat eye_quat = from_ovr(oculus.layer.RenderPose[eye].Orientation) * view_quat;
+				atom_setfloat(a + 0, eye_quat.x);
+				atom_setfloat(a + 1, eye_quat.y);
+				atom_setfloat(a + 2, eye_quat.z);
+				atom_setfloat(a + 3, eye_quat.w);
+				outlet_anything(outlet_eye[eye], _jit_sym_quat, 4, a);
+
+				// TODO: proj matrix doesn't need to be calculated every frame; only when fov/near/far/layer data changes
+				// projection
+				const ovrFovPort& fov = oculus.layer.Fov[eye];
+				atom_setfloat(a + 0, -fov.LeftTan * near_clip);
+				atom_setfloat(a + 1, fov.RightTan * near_clip);
+				atom_setfloat(a + 2, -fov.DownTan * near_clip);
+				atom_setfloat(a + 3, fov.UpTan * near_clip);
+				atom_setfloat(a + 4, near_clip);
+				atom_setfloat(a + 5, far_clip);
+				outlet_anything(outlet_eye[eye], ps_frustum, 6, a);
+			}
+
+			// Headset tracking data:
+			{
+				t_symbol * id = ps_head;
+				
+				// raw tracking data
+				glm::vec3 p = from_ovr(pose.Position);
+				glm::quat q = from_ovr(pose.Orientation);
+
+				atom_setsym(a + 0, ps_tracked_position);
+				atom_setfloat(a + 1, p.x);
+				atom_setfloat(a + 2, p.y);
+				atom_setfloat(a + 3, p.z);
+				outlet_anything(outlet_tracking, id, 4, a);
+
+				atom_setsym(a + 0, ps_tracked_quat);
+				atom_setfloat(a + 1, q.x);
+				atom_setfloat(a + 2, q.y);
+				atom_setfloat(a + 3, q.z);
+				atom_setfloat(a + 4, q.w);
+				outlet_anything(outlet_tracking, id, 5, a);
+
+				// adjusted to world space
+				glm::vec3 p1 = p + view_position;
+				glm::quat q1 = q * view_quat;
+
+				atom_setsym(a + 0, _jit_sym_position);
+				atom_setfloat(a + 1, p1.x);
+				atom_setfloat(a + 2, p1.y);
+				atom_setfloat(a + 3, p1.z);
+				outlet_anything(outlet_tracking, id, 4, a);
+
+				atom_setsym(a + 0, _jit_sym_quat);
+				atom_setfloat(a + 1, q1.x);
+				atom_setfloat(a + 2, q1.y);
+				atom_setfloat(a + 3, q1.z);
+				atom_setfloat(a + 4, q1.w);
+				outlet_anything(outlet_tracking, id, 5, a);
+			}
+
+			// controllers:
+			ovrInputState inputState;
+			if (OVR_SUCCESS(ovr_GetInputState(oculus.session, ovrControllerType_Touch, &inputState))) {
+				for (int i = 0; i < 2; i++) {
+
+					t_symbol * id = i ? ps_right_hand : ps_left_hand;
+
+					const ovrPosef& pose = ts.HandPoses[i].ThePose;
+					glm::vec3 p = from_ovr(pose.Position);
+					glm::quat q = from_ovr(pose.Orientation);
+
+					atom_setsym(a + 0, ps_tracked_position);
+					atom_setfloat(a + 1, p.x);
+					atom_setfloat(a + 2, p.y);
+					atom_setfloat(a + 3, p.z);
+					outlet_anything(outlet_tracking, id, 4, a);
+
+					atom_setsym(a + 0, ps_tracked_quat);
+					atom_setfloat(a + 1, q.x);
+					atom_setfloat(a + 2, q.y);
+					atom_setfloat(a + 3, q.z);
+					atom_setfloat(a + 4, q.w);
+					outlet_anything(outlet_tracking, id, 5, a);
+
+					// adjusted to world space
+					glm::vec3 p1 = p + view_position;
+					glm::quat q1 = q * view_quat;
+
+					atom_setsym(a + 0, _jit_sym_position);
+					atom_setfloat(a + 1, p1.x);
+					atom_setfloat(a + 2, p1.y);
+					atom_setfloat(a + 3, p1.z);
+					outlet_anything(outlet_tracking, id, 4, a);
+
+					atom_setsym(a + 0, _jit_sym_quat);
+					atom_setfloat(a + 1, q1.x);
+					atom_setfloat(a + 2, q1.y);
+					atom_setfloat(a + 3, q1.z);
+					atom_setfloat(a + 4, q1.w);
+					outlet_anything(outlet_tracking, id, 5, a);
+
+					// velocities:
+					glm::vec3 vel = from_ovr(ts.HandPoses[i].LinearVelocity);
+					glm::vec3 angvel = from_ovr(ts.HandPoses[i].AngularVelocity);
+
+					atom_setsym(a + 0, ps_velocity);
+					atom_setfloat(a + 1, vel.x);
+					atom_setfloat(a + 2, vel.y);
+					atom_setfloat(a + 3, vel.z);
+					outlet_anything(outlet_tracking, id, 4, a);
+
+					atom_setsym(a + 0, ps_angular_velocity);
+					atom_setfloat(a + 1, angvel.x);
+					atom_setfloat(a + 2, angvel.y);
+					atom_setfloat(a + 3, angvel.z);
+					outlet_anything(outlet_tracking, id, 4, a);
+
+					// buttons
+					atom_setsym(a + 0, ps_trigger);
+					atom_setlong(a + 1, inputState.IndexTrigger[i] > 0.25);
+					atom_setfloat(a + 2, inputState.IndexTrigger[i]);
+					outlet_anything(outlet_tracking, id, 3, a);
+
+					atom_setsym(a + 0, ps_hand_trigger);
+					atom_setlong(a + 1, inputState.HandTrigger[i] > 0.25);
+					atom_setfloat(a + 2, inputState.HandTrigger[i]);
+					outlet_anything(outlet_tracking, id, 3, a);
+
+					atom_setsym(a + 0, ps_thumbstick);
+					atom_setlong(a + 1, inputState.Touches & (i ? ovrButton_RThumb : ovrButton_LThumb));
+					atom_setfloat(a + 2, inputState.Thumbstick[i].x);
+					atom_setfloat(a + 3, inputState.Thumbstick[i].y);
+					atom_setlong(a + 4, inputState.Buttons & (i ? ovrButton_RThumb : ovrButton_LThumb));
+					outlet_anything(outlet_tracking, id, 5, a);
+
+					atom_setsym(a + 0, ps_buttons);
+					atom_setlong(a + 1, inputState.Buttons & (i ? ovrButton_A : ovrButton_X));
+					atom_setlong(a + 2, inputState.Buttons & (i ? ovrButton_B : ovrButton_Y));
+					outlet_anything(outlet_tracking, id, 3, a);
+				}
+			}
+		}
+	}
+
+	/////////////////////////////////////////////////////////////////////////////////////////////////
+
+	static t_symbol * vive_get_tracked_device_name(vr::IVRSystem *pHmd, vr::TrackedDeviceIndex_t unDevice, vr::TrackedDeviceProperty prop, vr::TrackedPropertyError *peError = NULL)
+	{
+		uint32_t unRequiredBufferLen = pHmd->GetStringTrackedDeviceProperty(unDevice, prop, NULL, 0, peError);
+		if (unRequiredBufferLen == 0) return _jit_sym_nothing;
+
+		char *pchBuffer = new char[unRequiredBufferLen];
+		unRequiredBufferLen = pHmd->GetStringTrackedDeviceProperty(unDevice, prop, pchBuffer, unRequiredBufferLen, peError);
+		t_symbol * sResult = gensym(pchBuffer);
+		delete[] pchBuffer;
+		return sResult;
+	}
+
+	void vive_configure() {
+		if (!vive.hmd) return;
+
+		t_symbol * display_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_TrackingSystemName_String);
+		t_symbol * driver_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_SerialNumber_String);
+		object_post(&ob, "display %s driver %s", display_name->s_name, driver_name->s_name);
+
+		// determine the recommended texture size for scene capture:
+		uint32_t dim[2];
+		vive.hmd->GetRecommendedRenderTargetSize(&dim[0], &dim[1]);
+		fbo_texture_dim[0] = dim[0]*2; // side-by-side
+		fbo_texture_dim[1] = dim[1];
+	}
 };
 
 void vr_connect(Vr * x) { x->connect(); }
@@ -676,6 +1128,20 @@ void ext_main(void* r) {
 	ps_jit_gl_texture = gensym("jit_gl_texture");
 	ps_glid = gensym("glid");
 	ps_viewport = gensym("viewport");
+	ps_frustum = gensym("frustum");
+	ps_tracked_position = gensym("tracked_position");
+	ps_tracked_quat = gensym("tracked_quat");
+
+	ps_head = gensym("head");
+	ps_left_hand = gensym("left_hand");
+	ps_right_hand = gensym("right_hand");
+
+	ps_velocity = gensym("velocity");
+	ps_angular_velocity = gensym("angular_velocity");
+	ps_trigger = gensym("trigger");
+	ps_hand_trigger = gensym("hand_trigger");
+	ps_thumbstick = gensym("thumbstick");
+	ps_buttons = gensym("buttons");
 
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
 	

@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-pretarget.cmake)
+
 find_package(OpenGL)
 
 if (WIN32)
@@ -13,13 +15,14 @@ if (WIN32)
 		SET(OpenVR_LIB ${CMAKE_CURRENT_SOURCE_DIR}/openvr/lib/win32/openvr_api.lib)
 		SET(Oculus_LIB ${CMAKE_CURRENT_SOURCE_DIR}/LibOVR/Lib/Windows/Win32/Release/VS2015/LibOVR.lib)
 	endif ()
+
+	# use /MT, because that's what the oculus libs used
+	set(CMAKE_CXX_FLAGS_RELEASE "/MT")
 else ()
 	
 	# OSX -- no libs right now
 	
 endif ()
-
-include(${CMAKE_CURRENT_SOURCE_DIR}/../../max-api/script/max-pretarget.cmake)
 
 
 include_directories( 
