@@ -365,8 +365,6 @@ struct Vr {
 	// this should be the *last* thing to happen before rendering the scene
 	// nothing time-consuming should happen between bang() and render
 	void bang() {
-		// if not connected, possibly, poll for availability?
-		if (!connected) return;
 		
 		// get desired view matrix (from @position and @quat attrs)
 		object_attr_getfloat_array(this, _jit_sym_position, 3, &view_position.x);
@@ -376,15 +374,12 @@ struct Vr {
 		// TODO: video (or separate message for this?)
 		
 		// TODO: driver poll events
-		oculus_bang();
-
-		// get tracking data
-		// output headset & controllers, both in worldspace and trackingspace
-		// output device states
-		
-		// compute camera poses & output to jit.gl.cameras 
-		// (also output frusta, viewport, ?)
-
+		if (connected) {
+			oculus_bang();
+		}
+		else {
+			// perhaps, poll for availability?
+		}
 
 		// always output camera poses here (so it works even if not currently tracking)
 		t_atom a[4];
