@@ -364,9 +364,27 @@ struct Vr {
 			return;	// no texture to copy from.
 		}
 		// TODO: verify that texob is a texture
+
+		// get input properties:
+		GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
+		// get input texture dimensions
+		t_atom_long input_texture_dim[2];
+		object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
+
 		
 		if (connected) {
-			submit_texture_to_hmd(jit_texture);
+			// submit it to the driver
+			if (!fbo_id) {
+				// TODO try to allocate FBO for copying Jitter texture to driver?
+				// or just bug out at this point?
+				object_error(&ob, "no fbo yet");
+				return;	// no texture to copy from.
+			}
+
+			// TODO driver specific
+			if (!oculus_submit_texture(input_texture_id, input_texture_dim)) {
+				object_error(&ob, "problem submitting texture");
+			}
 		}
 		
 		t_atom a[1];
@@ -375,28 +393,6 @@ struct Vr {
 		}
 		atom_setsym(a, intexture);
 		outlet_anything(outlet_tex, ps_jit_gl_texture, 1, a);
-	}
-	
-	void submit_texture_to_hmd(void * jit_texture) {
-		//GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
-		GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
-		// get input texture dimensions
-		t_atom_long input_texture_dim[2];
-		object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
-		//post("submit texture id %ld dim %ld %ld\n", input_texture_id, input_texture_dim[0], input_texture_dim[1]);
-		
-		if (!fbo_id) {
-			// TODO try to allocate FBO for copying Jitter texture to driver?
-			// or just bug out at this point?
-		}
-		
-		// TODO: check success
-		if (copy_texture_to_fbo(input_texture_id, input_texture_dim,
-						 	    fbo_id, fbo_texture_id, fbo_texture_dim)) {
-						 	
-			// submit fbo to driver
-		}
-						 	
 	}
 	
 	//////////////////////////////////////////////////////////////////////////////////////
@@ -464,11 +460,12 @@ struct Vr {
 			glPushMatrix();
 			glLoadIdentity();
 
+			/*
 			glClearColor(0, 0, 0, 1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+			
 			glColor4f(1.0, 0.0, 1.0, 1.0);
-
+*/
 			glActiveTexture(GL_TEXTURE0);
 			glClientActiveTexture(GL_TEXTURE0);
 			glEnable(GL_TEXTURE_RECTANGLE_ARB);
@@ -481,6 +478,7 @@ struct Vr {
 			glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 
 			// move to VA for rendering
+			// TODO flip vertical?
 			GLfloat tex_coords[] = {
 				(GLfloat)input_texture_dim[0], (GLfloat)input_texture_dim[1],
 				0.0, (GLfloat)input_texture_dim[1],
@@ -993,6 +991,54 @@ struct Vr {
 					outlet_anything(outlet_tracking, id, 3, a);
 				}
 			}
+		}
+	}
+
+	bool oculus_submit_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
+		if (!oculus.textureChain) {
+			object_error(&ob, "no texture set yet");
+			return false;
+		}
+
+		// get our next destination texture in the texture chain:
+		int curIndex;
+		ovr_GetTextureSwapChainCurrentIndex(oculus.session, oculus.textureChain, &curIndex);
+		GLuint oculus_target_texture_id;
+		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
+
+		// TODO: check success
+		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim, fbo_id, oculus_target_texture_id, fbo_texture_dim)) {
+			object_error(&ob, "problem copying texture");
+			return false;
+		}
+
+		// and commit it
+		if (!OVR_SUCCESS(ovr_CommitTextureSwapChain(oculus.session, oculus.textureChain))) {
+			object_error(&ob, "problem committing texture chain");
+		}
+
+		// Submit frame with one layer we have.
+		// ovr_SubmitFrame returns once frame present is queued up and the next texture slot in the ovrSwatextureChain is available for the next frame. 
+		ovrLayerHeader* layers = &oculus.layer.Header;
+		ovrResult       result = ovr_SubmitFrame(oculus.session, oculus.frameIndex, nullptr, &layers, 1);
+		if (result == ovrError_DisplayLost) {
+			/*
+			TODO: If you receive ovrError_DisplayLost, the device was removed and the session is invalid.
+			Release the shared resources (ovr_DestroySwatextureChain), destroy the session (ovr_Destory),
+			recreate it (ovr_Create), and create new resources (ovr_CreateSwatextureChainXXX).
+			The application's existing private graphics resources do not need to be recreated unless
+			the new ovr_Create call returns a different GraphicsLuid.
+			*/
+			object_error(&ob, "fatal error connection lost.");
+
+			disconnect();
+
+			return false;
+
+		} else {
+			oculus.frameIndex++;
+
+			return true;
 		}
 	}
 

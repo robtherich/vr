@@ -38,6 +38,20 @@
 		"subpatcher_template" : "",
 		"boxes" : [ 			{
 				"box" : 				{
+					"id" : "obj-14",
+					"linecount" : 3,
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 2,
+					"outlettype" : [ "jit_matrix", "" ],
+					"patching_rect" : [ 426.0, 71.0, 250.0, 50.0 ],
+					"style" : "",
+					"text" : "jit.gl.gridshape world @shape plane @poly_mode 1 1 @dim 21 21 @scale 10 10 @rotate 90 1 0 0"
+				}
+
+			}
+, 			{
+				"box" : 				{
 					"id" : "obj-12",
 					"maxclass" : "newobj",
 					"numinlets" : 1,
@@ -55,7 +69,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 380.0, 107.0, 116.0, 22.0 ],
+					"patching_rect" : [ 394.0, 123.0, 116.0, 22.0 ],
 					"style" : "",
 					"text" : "loadmess turn 0 1 0"
 				}
@@ -68,7 +82,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "", "" ],
-					"patching_rect" : [ 380.0, 136.0, 78.0, 22.0 ],
+					"patching_rect" : [ 394.0, 152.0, 78.0, 22.0 ],
 					"style" : "",
 					"text" : "jit.anim.drive"
 				}
@@ -94,7 +108,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_matrix", "" ],
-					"patching_rect" : [ 310.0, 170.0, 308.0, 22.0 ],
+					"patching_rect" : [ 324.0, 186.0, 308.0, 22.0 ],
 					"style" : "",
 					"text" : "jit.gl.gridshape world @shape sphere @poly_mode 1 1"
 				}
@@ -107,7 +121,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_texture", "" ],
-					"patching_rect" : [ 73.0, 353.0, 107.0, 22.0 ],
+					"patching_rect" : [ 235.0, 362.0, 107.0, 22.0 ],
 					"style" : "",
 					"text" : "jit.gl.camera world"
 				}
@@ -120,7 +134,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_texture", "" ],
-					"patching_rect" : [ 32.0, 321.0, 107.0, 22.0 ],
+					"patching_rect" : [ 194.0, 330.0, 107.0, 22.0 ],
 					"style" : "",
 					"text" : "jit.gl.camera world"
 				}
@@ -133,7 +147,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_matrix", "" ],
-					"patching_rect" : [ 390.5, 306.0, 203.0, 22.0 ],
+					"patching_rect" : [ 41.833332, 394.0, 203.0, 22.0 ],
 					"style" : "",
 					"text" : "jit.gl.videoplane @transform_reset 2"
 				}
@@ -216,6 +230,13 @@
 			}
 , 			{
 				"patchline" : 				{
+					"destination" : [ "obj-5", 0 ],
+					"source" : [ "obj-1", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
 					"destination" : [ "obj-6", 0 ],
 					"source" : [ "obj-1", 1 ]
 				}
@@ -268,15 +289,6 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-1", 0 ],
-					"order" : 1,
-					"source" : [ "obj-4", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-5", 0 ],
-					"order" : 0,
 					"source" : [ "obj-4", 0 ]
 				}
 
