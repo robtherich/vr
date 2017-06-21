@@ -20,6 +20,8 @@ extern "C" {
 	// (and needed to comment out the jit.common.h include)
 	#include "jit.gl.procs.h"
 	#include "jit.gl.support.h"
+	
+	#define USE_OCULUS 1
 #endif
 
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
@@ -248,9 +250,11 @@ struct Vr {
 
 		// TODO driver specific
 		// try to see if the Oculus driver is available:
+		#ifdef USE_OCULUS
 		if (!oculus_connect()) {
 			return false;
 		}
+		#endif
 
 		// if successful:
 		connected = 1;
@@ -272,8 +276,10 @@ struct Vr {
 		//object_post(&ob, "disconnect");
 
 		// TODO: driver-specific stuff
+		#ifdef USE_OCULUS
 		oculus_disconnect();
-	
+		#endif
+		
 		connected = 0;
 	}
 
@@ -285,9 +291,9 @@ struct Vr {
 		
 		if (connected) {
 			// TODO get driver details & output
+			#ifdef USE_OCULUS
 			oculus_configure();
-			// get recommended texture dim & output
-			// initialize camera matrices, frusta, etc. & output
+			#endif
 		}
 
 		// output recommended texture dim:
@@ -322,7 +328,9 @@ struct Vr {
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
 
 		// TODO driver specific:
+		#ifdef USE_OCULUS
 		oculus_create_gpu_resources();
+		#endif
 		
 		// create the FBO used to pass the scene texture to the driver:
 		if (!fbo_id) {
@@ -356,7 +364,9 @@ struct Vr {
 			}
 
 			// TODO driver specific
+			#ifdef USE_OCULUS
 			oculus_release_gpu_resources();
+			#endif
 		}
 	}
 	
@@ -375,7 +385,9 @@ struct Vr {
 		
 		// TODO: driver poll events
 		if (connected) {
+			#ifdef USE_OCULUS
 			oculus_bang();
+			#endif
 		}
 		else {
 			// perhaps, poll for availability?
@@ -429,9 +441,11 @@ struct Vr {
 			}
 
 			// TODO driver specific
+			#ifdef USE_OCULUS
 			if (!oculus_submit_texture(input_texture_id, input_texture_dim)) {
 				object_error(&ob, "problem submitting texture");
 			}
+			#endif
 		}
 		
 		t_atom a[1];
@@ -574,6 +588,8 @@ struct Vr {
 	// TODO battery, vibrate, render models
 
 	//////////////////////////////////////////////////
+	
+#ifdef USE_OCULUS
 
 	static void oculusrift_quit() {
 		if (oculus_initialized) ovr_Shutdown();
@@ -1084,6 +1100,15 @@ struct Vr {
 			return true;
 		}
 	}
+	
+#else // not defined USE_OCULUS
+
+// 	bool oculus_connect() { return 0; }
+// 	void oculus_disconnect() {}
+// 	void oculus_configure() {}
+// 	void oculus_create_gpu_resources() {};
+// 	void oculus_release_gpu_resources() {}
+#endif
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 
