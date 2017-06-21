@@ -206,7 +206,7 @@ struct Vr {
 	// or when gl context is created
 	// e.g. when creating jit.world or entering/leaving fullscreen
 	t_jit_err dest_changed() {
-		object_post(&ob, "dest_changed");
+		//object_post(&ob, "dest_changed");
 		// mark drawto gpu context as usable
 		// might not allocate gpu resources immediately, depends on whether driver is also connected
 		dest_ready = 1;
@@ -225,7 +225,7 @@ struct Vr {
 	// or when gl context is destroyed
 	// e.g. when deleting jit.world or entering/leaving fullscreen
 	t_jit_err dest_closing() {
-		object_post(&ob, "dest_closing");
+		//object_post(&ob, "dest_closing");
 
 		// automatically disconnect at this point
 		// since without a Jitter GPU context, there's nothing we can do
@@ -244,7 +244,7 @@ struct Vr {
 	// attempt to acquire the HMD
 	bool connect() {
 		if (connected) return true; // because we're already connected!
-		object_post(&ob, "connect");
+		//object_post(&ob, "connect");
 
 		// TODO driver specific
 		// try to see if the Oculus driver is available:
@@ -255,7 +255,7 @@ struct Vr {
 		// if successful:
 		connected = 1;
 
-		object_post(&ob, "connected");
+		//object_post(&ob, "connected");
 
 		configure();
 
@@ -269,7 +269,7 @@ struct Vr {
 	// release the HMD
 	void disconnect() {
 		if (!connected) return;
-		object_post(&ob, "disconnect");
+		//object_post(&ob, "disconnect");
 
 		// TODO: driver-specific stuff
 		oculus_disconnect();
@@ -280,7 +280,7 @@ struct Vr {
 	// called whenever HMD properties change
 	// will dump a lot of information to the last outlet
 	void configure() {
-		object_post(&ob, "configure");
+		//object_post(&ob, "configure");
 		t_atom a[6];
 		
 		if (connected) {
@@ -316,7 +316,7 @@ struct Vr {
 		if (!connected && !dest_ready) return; // we're not ready yet
 		if (fbo_id) return; // we already did it
 
-		object_post(&ob, "create_gpu_resources");
+		//object_post(&ob, "create_gpu_resources");
 
 		// get drawto context:
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
@@ -327,14 +327,14 @@ struct Vr {
 		// create the FBO used to pass the scene texture to the driver:
 		if (!fbo_id) {
 			glGenFramebuffersEXT(1, &fbo_id);
-			object_post(&ob, "created fbo %d", fbo_id);
+			//object_post(&ob, "created fbo %d", fbo_id);
 		}
 		
 		//create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
 	
 		// TODO gpu resources for mirror, videocamera,
 
-		object_post(&ob, "gpu resources created");
+		//object_post(&ob, "gpu resources created");
 
 	}
 
@@ -342,7 +342,7 @@ struct Vr {
 		
 		// release associated resources:
 		if (fbo_id) {
-			object_post(&ob, "release_gpu_resources");
+			//object_post(&ob, "release_gpu_resources");
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
 
@@ -587,7 +587,7 @@ struct Vr {
 
 	int oculusrift_init() {
 		if (oculus_initialized) return 1;
-		object_post(&ob, "oculus init");
+		//object_post(&ob, "oculus init");
 
 		// init OVR SDK
 		ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
@@ -625,7 +625,7 @@ struct Vr {
 			oculus_initialized = 1;
 
 
-			object_post(&ob, "oculus initialized OK");
+			//object_post(&ob, "oculus initialized OK");
 		}
 		return oculus_initialized;
 	}
@@ -633,7 +633,7 @@ struct Vr {
 	bool oculus_connect() {
 		if (!oculusrift_init()) return false;
 
-		object_post(&ob, "oculus connect");
+		//object_post(&ob, "oculus connect");
 
 		ovrResult result = ovr_Create(&oculus.session, &oculus.luid);
 		if (OVR_FAILURE(result)) {
@@ -645,14 +645,12 @@ struct Vr {
 			return false;
 		}
 
-		object_post(&ob, "LibOVR SDK %s, runtime %s", OVR_VERSION_STRING, ovr_GetVersionString());
-
 		return true;
 	}
 
 	void oculus_disconnect() {
 		if (oculus.session) {
-			object_post(&ob, "oculus disconnect");
+			//object_post(&ob, "oculus disconnect");
 
 			release_gpu_resources();
 
@@ -662,7 +660,7 @@ struct Vr {
 	}
 
 	void oculus_configure() {
-		object_post(&ob, "oculus configure");
+		//object_post(&ob, "oculus configure");
 		if (!oculus.session) {
 			object_error(&ob, "no Oculus session to configure");
 			return;
@@ -674,6 +672,12 @@ struct Vr {
 
 		oculus.hmd = ovr_GetHmdDesc(oculus.session);
 		// Use hmd members and ovr_GetFovTextureSize() to determine graphics configuration
+
+
+		atom_setsym(a, gensym(OVR_VERSION_STRING));
+		outlet_anything(outlet_msg, gensym("SDK"), 1, a);
+		atom_setsym(a, gensym(ovr_GetVersionString()));
+		outlet_anything(outlet_msg, gensym("runtime"), 1, a);
 
 		// TODO complete list of useful info from https://developer.oculus.com/documentation/pcsdk/latest/concepts/dg-sensor/
 #define HMD_CASE(T) case T: { \
@@ -720,6 +724,7 @@ struct Vr {
 		atom_setlong(a + 1, resolution.h);
 		outlet_anything(outlet_msg, gensym("resolution"), 2, a);
 
+
 		ovrSizei recommenedTex0Size, recommenedTex1Size;
 		//MaxEyeFov - Maximum optical field of view that can be practically rendered for each eye.
 		if (oculus.max_fov) {
@@ -760,13 +765,13 @@ struct Vr {
 			ovr_SetTrackingOriginType(oculus.session, ovrTrackingOrigin_EyeLevel);
 		};
 
-		object_post(&ob, "oculus configured");
+		//object_post(&ob, "oculus configured");
 	}
 
 	bool oculus_create_gpu_resources() {
 		if (!oculus.session) return false;
 		if (!oculus.textureChain) {
-			object_post(&ob, "oculus create gpu");
+			//object_post(&ob, "oculus create gpu");
 			ovrTextureSwapChainDesc desc = {};
 			desc.Type = ovrTexture_2D;
 			desc.ArraySize = 1;
@@ -792,14 +797,14 @@ struct Vr {
 			oculus.layer.ColorTexture[0] = oculus.textureChain;
 			oculus.layer.ColorTexture[1] = oculus.textureChain;
 
-			object_post(&ob, "oculus gpu resources created");
+			//object_post(&ob, "oculus gpu resources created");
 
 		}
 		return true;
 	}
 
 	void oculus_release_gpu_resources() {
-		object_post(&ob, "oculus release gpu");
+		//object_post(&ob, "oculus release gpu");
 		if (oculus.session && oculus.textureChain) {
 			ovr_DestroyTextureSwapChain(oculus.session, oculus.textureChain);
 			oculus.textureChain = 0;
@@ -883,9 +888,9 @@ struct Vr {
 
 				// get the tracking-space pose & convert to mat4
 				const ovrPosef& pose = oculus.layer.RenderPose[eye];
-				eye_mat[eye] = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position)) 
-							 * mat4_cast(from_ovr(pose.Orientation));
-				
+				eye_mat[eye] = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
+					* mat4_cast(from_ovr(pose.Orientation));
+
 				// TODO: proj matrix doesn't need to be calculated every frame; only when fov/near/far/layer data changes
 				// projection
 				const ovrFovPort& fov = oculus.layer.Fov[eye];
@@ -897,15 +902,25 @@ struct Vr {
 				atom_setfloat(a + 5, far_clip);
 				outlet_anything(outlet_eye[eye], ps_frustum, 6, a);
 			}
+		}
 
+		{
 			// Headset tracking data:
 			{
 				t_symbol * id = ps_head;
 				
 				// raw tracking data
 				const ovrPosef& pose = ts.HeadPose.ThePose;
-				glm::vec3 p = from_ovr(pose.Position);
-				glm::quat q = from_ovr(pose.Orientation);
+
+				glm::mat4 mat = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
+					* mat4_cast(from_ovr(pose.Orientation));
+				glm::vec3 p = glm::vec3(mat[3]); // the translation component
+				glm::quat q = glm::quat_cast(mat); // the orientation component
+
+				// adjusted to world space
+				glm::mat4 world_mat = view_mat * mat;
+				glm::vec3 p1 = glm::vec3(world_mat[3]); // the translation component
+				glm::quat q1 = glm::quat_cast(world_mat); // the orientation component
 
 				atom_setsym(a + 0, ps_tracked_position);
 				atom_setfloat(a + 1, p.x);
@@ -919,10 +934,6 @@ struct Vr {
 				atom_setfloat(a + 3, q.z);
 				atom_setfloat(a + 4, q.w);
 				outlet_anything(outlet_tracking, id, 5, a);
-
-				// adjusted to world space
-				glm::vec3 p1 = p + view_position;
-				glm::quat q1 = q * view_quat;
 
 				atom_setsym(a + 0, _jit_sym_position);
 				atom_setfloat(a + 1, p1.x);
@@ -946,8 +957,16 @@ struct Vr {
 					t_symbol * id = i ? ps_right_hand : ps_left_hand;
 
 					const ovrPosef& pose = ts.HandPoses[i].ThePose;
-					glm::vec3 p = from_ovr(pose.Position);
-					glm::quat q = from_ovr(pose.Orientation);
+
+					glm::mat4 mat = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
+						* mat4_cast(from_ovr(pose.Orientation));
+					glm::vec3 p = glm::vec3(mat[3]); // the translation component
+					glm::quat q = glm::quat_cast(mat); // the orientation component
+					
+					// adjusted to world space
+					glm::mat4 world_mat = view_mat * mat;
+					glm::vec3 p1 = glm::vec3(world_mat[3]); // the translation component
+					glm::quat q1 = glm::quat_cast(world_mat); // the orientation component
 
 					atom_setsym(a + 0, ps_tracked_position);
 					atom_setfloat(a + 1, p.x);
@@ -961,10 +980,6 @@ struct Vr {
 					atom_setfloat(a + 3, q.z);
 					atom_setfloat(a + 4, q.w);
 					outlet_anything(outlet_tracking, id, 5, a);
-
-					// adjusted to world space
-					glm::vec3 p1 = p + view_position;
-					glm::quat q1 = q * view_quat;
 
 					atom_setsym(a + 0, _jit_sym_position);
 					atom_setfloat(a + 1, p1.x);
@@ -980,8 +995,12 @@ struct Vr {
 					outlet_anything(outlet_tracking, id, 5, a);
 
 					// velocities:
+					// note that these are in tracking space
 					glm::vec3 vel = from_ovr(ts.HandPoses[i].LinearVelocity);
 					glm::vec3 angvel = from_ovr(ts.HandPoses[i].AngularVelocity);
+					// rotated into world space (TODO is this appropriate? rotate or unrotate?)
+					vel = quat_rotate(view_quat, vel);
+					angvel = quat_rotate(view_quat, angvel);
 
 					atom_setsym(a + 0, ps_velocity);
 					atom_setfloat(a + 1, vel.x);
@@ -1087,10 +1106,13 @@ struct Vr {
 
 	void vive_configure() {
 		if (!vive.hmd) return;
-
+		t_atom a[2];
 		t_symbol * display_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_TrackingSystemName_String);
 		t_symbol * driver_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_SerialNumber_String);
-		object_post(&ob, "display %s driver %s", display_name->s_name, driver_name->s_name);
+		atom_setsym(a, display_name);
+		outlet_anything(outlet_msg, gensym("display"), 1, a);
+		atom_setsym(a, driver_name);
+		outlet_anything(outlet_msg, gensym("driver"), 1, a);
 
 		// determine the recommended texture size for scene capture:
 		uint32_t dim[2];
