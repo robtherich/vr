@@ -15,6 +15,8 @@ using namespace c74::max;
 extern "C" {
 	#include "jit.gl.h"
 
+
+#define VR_DEBUG_POST(fmt, ...) do {} while (0)
 #ifdef WIN_VERSION
 	// needed this for glFrameBuffer / GL_FRAMEBUFFER symbols
 	// (and needed to comment out the jit.common.h include)
@@ -22,6 +24,12 @@ extern "C" {
 	#include "jit.gl.support.h"
 	
 	#define USE_DRIVERS 1
+
+	#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__); } while (0)
+#else
+
+
+
 #endif
 
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
@@ -29,6 +37,7 @@ extern "C" {
 	void * jit_object_register(void *x, t_symbol *s);
 	void * jit_object_findregistered(c74::max::t_symbol *s);
 	void * jit_object_register(void *x, c74::max::t_symbol *s);
+
 }
 
 // Oculus:
@@ -122,6 +131,7 @@ struct Vr {
 	//void * outlet_node;
 	void * outlet_eye[2];
 	void * outlet_tex;
+	int attrs_ready = 0;
 	
 	// attrs:
 	float near_clip = 0.15f;
@@ -233,7 +243,7 @@ struct Vr {
 	// or when gl context is created
 	// e.g. when creating jit.world or entering/leaving fullscreen
 	t_jit_err dest_changed() {
-		object_post(&ob, "dest_changed");
+		VR_DEBUG_POST("dest_changed");
 		// mark drawto gpu context as usable
 		// might not allocate gpu resources immediately, depends on whether driver is also connected
 		dest_ready = 1;
@@ -252,7 +262,7 @@ struct Vr {
 	// or when gl context is destroyed
 	// e.g. when deleting jit.world or entering/leaving fullscreen
 	t_jit_err dest_closing() {
-		//object_post(&ob, "dest_closing");
+		VR_DEBUG_POST("dest_closing");
 
 		// automatically disconnect at this point
 		// since without a Jitter GPU context, there's nothing we can do
@@ -271,7 +281,7 @@ struct Vr {
 	// attempt to acquire the HMD
 	bool connect() {
 		if (connected) return true; // because we're already connected!
-		object_post(&ob, "connect");
+		VR_DEBUG_POST("connect");
 
 		// TODO driver specific
 		// try to see if the Oculus driver is available:
@@ -291,7 +301,7 @@ struct Vr {
 		// if successful:
 		connected = 1;
 
-		//object_post(&ob, "connected");
+		VR_DEBUG_POST("connected");
 
 		configure();
 
@@ -305,7 +315,7 @@ struct Vr {
 	// release the HMD
 	void disconnect() {
 		if (!connected) return;
-		//object_post(&ob, "disconnect");
+		VR_DEBUG_POST("disconnect");
 
 		// TODO: driver-specific stuff
 		#ifdef USE_DRIVERS
@@ -323,7 +333,7 @@ struct Vr {
 	// called whenever HMD properties change
 	// will dump a lot of information to the last outlet
 	void configure() {
-		object_post(&ob, "configure %d", connected);
+		VR_DEBUG_POST("configure %d", connected);
 		t_atom a[6];
 		
 		if (connected) {
@@ -364,7 +374,7 @@ struct Vr {
 		if (!connected && !dest_ready) return; // we're not ready yet
 		if (fbo_id) return; // we already did it
 
-		//object_post(&ob, "create_gpu_resources");
+		VR_DEBUG_POST("create_gpu_resources");
 
 		// get drawto context:
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
@@ -388,7 +398,7 @@ struct Vr {
 		
 		// release associated resources:
 		if (fbo_id) {
-			//object_post(&ob, "release_gpu_resources");
+			VR_DEBUG_POST("release_gpu_resources");
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
 
@@ -650,7 +660,7 @@ struct Vr {
 
 	int oculusrift_init() {
 		if (oculus_initialized) return 1;
-		//object_post(&ob, "oculus init");
+		VR_DEBUG_POST("oculus init");
 
 		// init OVR SDK
 		ovrInitParams initParams = { ovrInit_RequestVersion, OVR_MINOR_VERSION, NULL, 0, 0 };
@@ -688,7 +698,7 @@ struct Vr {
 			oculus_initialized = 1;
 
 
-			//object_post(&ob, "oculus initialized OK");
+			VR_DEBUG_POST("oculus initialized OK");
 		}
 		return oculus_initialized;
 	}
@@ -696,7 +706,7 @@ struct Vr {
 	bool oculus_connect() {
 		if (!oculusrift_init()) return false;
 
-		//object_post(&ob, "oculus connect");
+		VR_DEBUG_POST("oculus connect");
 
 		ovrResult result = ovr_Create(&oculus.session, &oculus.luid);
 		if (OVR_FAILURE(result)) {
@@ -713,7 +723,7 @@ struct Vr {
 
 	void oculus_disconnect() {
 		if (oculus.session) {
-			//object_post(&ob, "oculus disconnect");
+			VR_DEBUG_POST("oculus disconnect");
 
 			release_gpu_resources();
 
@@ -723,7 +733,7 @@ struct Vr {
 	}
 
 	void oculus_configure() {
-		//object_post(&ob, "oculus configure");
+		VR_DEBUG_POST("oculus configure");
 		if (!oculus.session) {
 			object_error(&ob, "no Oculus session to configure");
 			return;
@@ -828,13 +838,13 @@ struct Vr {
 			ovr_SetTrackingOriginType(oculus.session, ovrTrackingOrigin_EyeLevel);
 		};
 
-		//object_post(&ob, "oculus configured");
+		VR_DEBUG_POST("oculus configured");
 	}
 
 	bool oculus_create_gpu_resources() {
 		if (!oculus.session) return false;
 		if (!oculus.textureChain) {
-			//object_post(&ob, "oculus create gpu");
+			VR_DEBUG_POST("oculus create gpu");
 			ovrTextureSwapChainDesc desc = {};
 			desc.Type = ovrTexture_2D;
 			desc.ArraySize = 1;
@@ -860,14 +870,14 @@ struct Vr {
 			oculus.layer.ColorTexture[0] = oculus.textureChain;
 			oculus.layer.ColorTexture[1] = oculus.textureChain;
 
-			//object_post(&ob, "oculus gpu resources created");
+			VR_DEBUG_POST("oculus gpu resources created");
 
 		}
 		return true;
 	}
 
 	void oculus_release_gpu_resources() {
-		//object_post(&ob, "oculus release gpu");
+		VR_DEBUG_POST("oculus release gpu");
 		if (oculus.session && oculus.textureChain) {
 			ovr_DestroyTextureSwapChain(oculus.session, oculus.textureChain);
 			oculus.textureChain = 0;
@@ -1205,14 +1215,14 @@ struct Vr {
 				//if (use_camera) video_start();
 			}
 		}
-		//object_post(&ob, "steam connected");
+		VR_DEBUG_POST("steam connected");
 
 		return true;
 	}
 
 	void steam_disconnect() {
 		if (steam.hmd) {
-			//object_post(&ob, "oculus disconnect");
+			VR_DEBUG_POST("oculus disconnect");
 
 			release_gpu_resources();
 
@@ -1226,7 +1236,7 @@ struct Vr {
 
 
 	void steam_configure() {
-		object_post(&ob, "steam configure");
+		VR_DEBUG_POST("steam configure");
 		if (!steam.hmd) {
 			object_error(&ob, "no SteamVR session to configure");
 			return;
@@ -1263,7 +1273,7 @@ struct Vr {
 			outlet_anything(outlet_eye[i], ps_frustum, 6, a);
 		}
 
-		//object_post(&ob, "oculus configured");
+		VR_DEBUG_POST("steam configured");
 	}
 
 
@@ -1568,55 +1578,6 @@ struct Vr {
 		glFlush();
 		glFinish();
 
-#if 0
-		if (!oculus.textureChain) {
-			object_error(&ob, "no texture set yet");
-			return false;
-		}
-
-		// get our next destination texture in the texture chain:
-		int curIndex;
-		ovr_GetTextureSwapChainCurrentIndex(oculus.session, oculus.textureChain, &curIndex);
-		GLuint oculus_target_texture_id;
-		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
-
-		// TODO: check success
-		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim,
-			fbo_id, oculus_target_texture_id, fbo_texture_dim, true)) {
-			object_error(&ob, "problem copying texture");
-			return false;
-		}
-
-		// and commit it
-		if (!OVR_SUCCESS(ovr_CommitTextureSwapChain(oculus.session, oculus.textureChain))) {
-			object_error(&ob, "problem committing texture chain");
-		}
-
-		// Submit frame with one layer we have.
-		// ovr_SubmitFrame returns once frame present is queued up and the next texture slot in the ovrSwatextureChain is available for the next frame. 
-		ovrLayerHeader* layers = &oculus.layer.Header;
-		ovrResult       result = ovr_SubmitFrame(oculus.session, oculus.frameIndex, nullptr, &layers, 1);
-		if (result == ovrError_DisplayLost) {
-			/*
-			TODO: If you receive ovrError_DisplayLost, the device was removed and the session is invalid.
-			Release the shared resources (ovr_DestroySwatextureChain), destroy the session (ovr_Destory),
-			recreate it (ovr_Create), and create new resources (ovr_CreateSwatextureChainXXX).
-			The application's existing private graphics resources do not need to be recreated unless
-			the new ovr_Create call returns a different GraphicsLuid.
-			*/
-			object_error(&ob, "fatal error connection lost.");
-
-			disconnect();
-
-			return false;
-
-		}
-		else {
-			oculus.frameIndex++;
-
-			return true;
-		}
-#endif
 		return true;
 	}
 
@@ -1651,9 +1612,17 @@ if (x->session) ovr_RecenterTrackingOrigin(x->session);
 t_max_err vr_use_steam_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	t_atom_long l = atom_getlong(argv);
 	if (x->use_steam != l) {
-		x->disconnect();
-		x->use_steam = l;
-		x->connect();
+		if (x->connected) {
+			// auto re-connect
+			x->disconnect();
+			x->use_steam = l;
+			x->connect();
+		}
+		else {
+			// don't auto-connect. 
+			// this guard necessary so that the initial constructor doesn't attempt to connect to early
+			x->use_steam = 1;
+		}
 	}
 	return 0;
 }
@@ -1701,6 +1670,7 @@ void* vr_new(t_symbol* name, long argc, t_atom* argv) {
 		x = new (x)Vr(drawto);
 		// apply attrs:
 		attr_args_process(x, (short)argc, argv);
+		x->attrs_ready = 1;
 	}
 	return x;
 }
