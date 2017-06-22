@@ -9,7 +9,7 @@ if (WIN32)
 	if (CMAKE_SIZEOF_VOID_P EQUAL 8)
 		# Windows 64-bit
 		SET(OpenVR_LIB ${CMAKE_CURRENT_SOURCE_DIR}/openvr/lib/win64/openvr_api.lib)
-		SET(Oculus_LIB ${CMAKE_CURRENT_SOURCE_DIR}/LibOVR/Lib/Windows/Win32/Release/VS2015/LibOVR.lib)
+		SET(Oculus_LIB ${CMAKE_CURRENT_SOURCE_DIR}/LibOVR/Lib/Windows/x64/Release/VS2015/LibOVR.lib)
 	else ()
 		# Windows 32-bit
 		SET(OpenVR_LIB ${CMAKE_CURRENT_SOURCE_DIR}/openvr/lib/win32/openvr_api.lib)
