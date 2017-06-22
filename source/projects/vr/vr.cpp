@@ -21,7 +21,7 @@ extern "C" {
 	#include "jit.gl.procs.h"
 	#include "jit.gl.support.h"
 	
-	#define USE_OCULUS 1
+	#define USE_DRIVERS 1
 #endif
 
 	// needed to declare these here, as they aren't declared in c74_jitter.h:
@@ -34,7 +34,7 @@ extern "C" {
 // Oculus:
 #include "OVR_CAPI.h"
 #include "OVR_CAPI_GL.h"
-// Vive:
+// steam:
 // The OpenVR SDK:
 #include "openvr.h"
 
@@ -58,7 +58,7 @@ static t_symbol * ps_velocity;
 static t_symbol * ps_angular_velocity;
 static t_symbol * ps_trigger;
 static t_symbol * ps_hand_trigger;
-static t_symbol * ps_thumbstick;
+static t_symbol * ps_pad;
 static t_symbol * ps_buttons;
 
 // jitter uses xyzw format
@@ -79,14 +79,33 @@ glm::quat quat_to_jitter(glm::quat const & v) {
 	return glm::quat(v.x, v.y, v.z, v.w);
 }
 
-glm::quat from_ovr(ovrQuatf const q) {
+glm::quat to_glm(ovrQuatf const q) {
 	return glm::quat(q.w, q.x, q.y, q.z);
 }
 
-glm::vec3 from_ovr(ovrVector3f const v) {
+glm::vec3 to_glm(ovrVector3f const v) {
 	return glm::vec3(v.x, v.y, v.z);
 }
 
+glm::vec3 to_glm(vr::HmdVector3_t const v) {
+	return glm::vec3(v.v[0], v.v[1], v.v[2]);
+}
+
+glm::mat4 to_glm(vr::HmdMatrix34_t const m) {
+	return glm::mat4(
+		m.m[0][0], m.m[1][0], m.m[2][0], 0.0,
+		m.m[0][1], m.m[1][1], m.m[2][1], 0.0,
+		m.m[0][2], m.m[1][2], m.m[2][2], 0.0,
+		m.m[0][3], m.m[1][3], m.m[2][3], 1.0f);
+}
+
+glm::mat4 to_glm(vr::HmdMatrix44_t const m) {
+	return glm::mat4(
+		m.m[0][0], m.m[1][0], m.m[2][0], m.m[3][0],
+		m.m[0][1], m.m[1][1], m.m[2][1], m.m[3][1],
+		m.m[0][2], m.m[1][2], m.m[2][2], m.m[3][2],
+		m.m[0][3], m.m[1][3], m.m[2][3], m.m[3][3]);
+}
 
 #include <string>
 #include <fstream>
@@ -107,6 +126,7 @@ struct Vr {
 	// attrs:
 	float near_clip = 0.15f;
 	float far_clip = 100.f;
+	int use_steam = 0;
 	
 	// configuration:
 	int connected = 0;
@@ -123,7 +143,6 @@ struct Vr {
 	// (we can't submit the jit_gl_texture directly)
 	GLuint fbo_id = 0;
 	GLuint rbo_id = 0;
-	GLuint fbo_texture_id = 0;
 	t_atom_long fbo_texture_dim[2];
 
 	// driver-specific:
@@ -149,22 +168,26 @@ struct Vr {
 		vr::IVRSystem *	hmd;
 		t_symbol * driver;
 		t_symbol * display;
+		GLuint fbo_texture_id = 0;
+
 		vr::TrackedDevicePose_t pRenderPoseArray[vr::k_unMaxTrackedDeviceCount];
-		glm::mat4 mDevicePose[vr::k_unMaxTrackedDeviceCount];
-		glm::mat4 mHMDPose;
-		glm::mat4 m_mat4viewEye[2];
+		int mHandControllerDeviceIndex[2];
+		glm::mat4 head2eye_mat[2];
 		glm::mat4 m_mat4projectionEye[2];
 
-		vr::IVRRenderModels * mRenderModels;
-		vr::IVRTrackedCamera * mCamera;
-		vr::TrackedCameraHandle_t m_hTrackedCamera;
+		vr::IVRRenderModels * mRenderModels = 0;
+
+		int use_camera = 0;
+		vr::IVRTrackedCamera * mCamera = 0;
+		vr::TrackedCameraHandle_t m_hTrackedCamera = INVALID_TRACKED_CAMERA_HANDLE;
 		uint32_t	m_nCameraFrameWidth;
 		uint32_t	m_nCameraFrameHeight;
 		uint32_t	m_nCameraFrameBufferSize;
-		uint32_t	m_nLastFrameSequence;
-		uint8_t		* m_pCameraFrameBuffer;
-		vr::EVRTrackedCameraFrameType frametype;
-	} vive;
+		uint32_t	m_nLastFrameSequence = 0;
+		uint8_t		* m_pCameraFrameBuffer = 0;
+		vr::EVRTrackedCameraFrameType frametype = vr::VRTrackedCameraFrameType_Undistorted;
+
+	} steam;
 	
 	Vr(t_symbol * drawto) {
 		// init Max object:
@@ -189,6 +212,8 @@ struct Vr {
 			float eye_forward = 0.095; // a typical distance from center of head to eye plane
 			glm::vec3 p(eye ? ipd / 2.f : -ipd / 2.f, eye_height, -eye_forward);
 			eye_mat[eye] = glm::translate(glm::mat4(1.0f), p);
+
+			steam.mHandControllerDeviceIndex[eye] = -1;
 		}
 	}
 
@@ -208,7 +233,7 @@ struct Vr {
 	// or when gl context is created
 	// e.g. when creating jit.world or entering/leaving fullscreen
 	t_jit_err dest_changed() {
-		//object_post(&ob, "dest_changed");
+		object_post(&ob, "dest_changed");
 		// mark drawto gpu context as usable
 		// might not allocate gpu resources immediately, depends on whether driver is also connected
 		dest_ready = 1;
@@ -246,13 +271,20 @@ struct Vr {
 	// attempt to acquire the HMD
 	bool connect() {
 		if (connected) return true; // because we're already connected!
-		//object_post(&ob, "connect");
+		object_post(&ob, "connect");
 
 		// TODO driver specific
 		// try to see if the Oculus driver is available:
-		#ifdef USE_OCULUS
-		if (!oculus_connect()) {
-			return false;
+		#ifdef USE_DRIVERS
+		if (use_steam) {
+			if (!steam_connect()) {
+				return false;
+			}
+		}
+		else {
+			if (!oculus_connect()) {
+				return false;
+			}
 		}
 		#endif
 
@@ -276,8 +308,13 @@ struct Vr {
 		//object_post(&ob, "disconnect");
 
 		// TODO: driver-specific stuff
-		#ifdef USE_OCULUS
-		oculus_disconnect();
+		#ifdef USE_DRIVERS
+		if (use_steam) {
+			steam_disconnect();
+		}
+		else {
+			oculus_disconnect();
+		}
 		#endif
 		
 		connected = 0;
@@ -286,13 +323,18 @@ struct Vr {
 	// called whenever HMD properties change
 	// will dump a lot of information to the last outlet
 	void configure() {
-		//object_post(&ob, "configure");
+		object_post(&ob, "configure %d", connected);
 		t_atom a[6];
 		
 		if (connected) {
 			// TODO get driver details & output
-			#ifdef USE_OCULUS
-			oculus_configure();
+			#ifdef USE_DRIVERS
+			if (use_steam) {
+				steam_configure();
+			}
+			else {
+				oculus_configure();
+			}
 			#endif
 		}
 
@@ -327,23 +369,19 @@ struct Vr {
 		// get drawto context:
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
 
-		// TODO driver specific:
-		#ifdef USE_OCULUS
-		oculus_create_gpu_resources();
+		#ifdef USE_DRIVERS
+		if (use_steam) {
+			steam_create_gpu_resources();
+		}
+		else {
+			oculus_create_gpu_resources();
+		}
 		#endif
 		
 		// create the FBO used to pass the scene texture to the driver:
 		if (!fbo_id) {
 			glGenFramebuffersEXT(1, &fbo_id);
-			//object_post(&ob, "created fbo %d", fbo_id);
 		}
-		
-		//create_fbo(&fbo_id, &rbo_id, &fbo_texture_id, fbo_texture_dim);
-	
-		// TODO gpu resources for mirror, videocamera,
-
-		//object_post(&ob, "gpu resources created");
-
 	}
 
 	void release_gpu_resources() {
@@ -354,18 +392,20 @@ struct Vr {
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
 
-			if (fbo_texture_id) {
-				glDeleteTextures(1, &fbo_texture_id);
-				fbo_texture_id = 0;
-			}
-			if (rbo_id) {
-				glDeleteRenderbuffersEXT(1, &rbo_id);
-				rbo_id = 0;
-			}
+			
+			//if (rbo_id) {
+			//	glDeleteRenderbuffersEXT(1, &rbo_id);
+			//	rbo_id = 0;
+			//}
 
 			// TODO driver specific
-			#ifdef USE_OCULUS
-			oculus_release_gpu_resources();
+			#ifdef USE_DRIVERS
+			if (use_steam) {
+				steam_release_gpu_resources();
+			}
+			else {
+				oculus_release_gpu_resources();
+			}
 			#endif
 		}
 	}
@@ -385,8 +425,13 @@ struct Vr {
 		
 		// TODO: driver poll events
 		if (connected) {
-			#ifdef USE_OCULUS
-			oculus_bang();
+			#ifdef USE_DRIVERS
+			if (use_steam) {
+				steam_bang();
+			}
+			else {
+				oculus_bang();
+			}
 			#endif
 		}
 		else {
@@ -435,15 +480,25 @@ struct Vr {
 			// submit it to the driver
 			if (!fbo_id) {
 				// TODO try to allocate FBO for copying Jitter texture to driver?
-				// or just bug out at this point?
-				object_error(&ob, "no fbo yet");
-				return;	// no texture to copy from.
+				create_gpu_resources();
+				if (!fbo_id) {
+					// just bug out at this point?
+					object_error(&ob, "no fbo yet");
+					return;	// no texture to copy from.
+				}
 			}
 
 			// TODO driver specific
-			#ifdef USE_OCULUS
-			if (!oculus_submit_texture(input_texture_id, input_texture_dim)) {
-				object_error(&ob, "problem submitting texture");
+			#ifdef USE_DRIVERS
+			if (use_steam) {
+				if (!steam_submit_texture(input_texture_id, input_texture_dim)) {
+					object_error(&ob, "problem submitting texture");
+				}
+			}
+			else {
+				if (!oculus_submit_texture(input_texture_id, input_texture_dim)) {
+					object_error(&ob, "problem submitting texture");
+				}
 			}
 			#endif
 		}
@@ -495,12 +550,9 @@ struct Vr {
 			glPushMatrix();
 			glLoadIdentity();
 
-			
 			glClearColor(0, 0, 0, 1);
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-			/*
-			glColor4f(1.0, 0.0, 1.0, 1.0);
-*/
+
 			glActiveTexture(GL_TEXTURE0);
 			glClientActiveTexture(GL_TEXTURE0);
 			glEnable(GL_TEXTURE_RECTANGLE_ARB);
@@ -589,7 +641,7 @@ struct Vr {
 
 	//////////////////////////////////////////////////
 	
-#ifdef USE_OCULUS
+#ifdef USE_DRIVERS
 
 	static void oculusrift_quit() {
 		if (oculus_initialized) ovr_Shutdown();
@@ -899,8 +951,8 @@ struct Vr {
 
 				// get the tracking-space pose & convert to mat4
 				const ovrPosef& pose = oculus.layer.RenderPose[eye];
-				eye_mat[eye] = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
-					* mat4_cast(from_ovr(pose.Orientation));
+				eye_mat[eye] = glm::translate(glm::mat4(1.0f), to_glm(pose.Position))
+					* mat4_cast(to_glm(pose.Orientation));
 
 				// TODO: proj matrix doesn't need to be calculated every frame; only when fov/near/far/layer data changes
 				// projection
@@ -923,8 +975,8 @@ struct Vr {
 				// raw tracking data
 				const ovrPosef& pose = ts.HeadPose.ThePose;
 
-				glm::mat4 mat = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
-					* mat4_cast(from_ovr(pose.Orientation));
+				glm::mat4 mat = glm::translate(glm::mat4(1.0f), to_glm(pose.Position))
+					* mat4_cast(to_glm(pose.Orientation));
 				glm::vec3 p = glm::vec3(mat[3]); // the translation component
 				glm::quat q = glm::quat_cast(mat); // the orientation component
 
@@ -969,8 +1021,8 @@ struct Vr {
 
 					const ovrPosef& pose = ts.HandPoses[i].ThePose;
 
-					glm::mat4 mat = glm::translate(glm::mat4(1.0f), from_ovr(pose.Position))
-						* mat4_cast(from_ovr(pose.Orientation));
+					glm::mat4 mat = glm::translate(glm::mat4(1.0f), to_glm(pose.Position))
+						* mat4_cast(to_glm(pose.Orientation));
 					glm::vec3 p = glm::vec3(mat[3]); // the translation component
 					glm::quat q = glm::quat_cast(mat); // the orientation component
 					
@@ -1007,8 +1059,8 @@ struct Vr {
 
 					// velocities:
 					// note that these are in tracking space
-					glm::vec3 vel = from_ovr(ts.HandPoses[i].LinearVelocity);
-					glm::vec3 angvel = from_ovr(ts.HandPoses[i].AngularVelocity);
+					glm::vec3 vel = to_glm(ts.HandPoses[i].LinearVelocity);
+					glm::vec3 angvel = to_glm(ts.HandPoses[i].AngularVelocity);
 					// rotated into world space (TODO is this appropriate? rotate or unrotate?)
 					vel = quat_rotate(view_quat, vel);
 					angvel = quat_rotate(view_quat, angvel);
@@ -1036,7 +1088,7 @@ struct Vr {
 					atom_setfloat(a + 2, inputState.HandTrigger[i]);
 					outlet_anything(outlet_tracking, id, 3, a);
 
-					atom_setsym(a + 0, ps_thumbstick);
+					atom_setsym(a + 0, ps_pad);
 					atom_setlong(a + 1, inputState.Touches & (i ? ovrButton_RThumb : ovrButton_LThumb));
 					atom_setfloat(a + 2, inputState.Thumbstick[i].x);
 					atom_setfloat(a + 3, inputState.Thumbstick[i].y);
@@ -1101,18 +1153,10 @@ struct Vr {
 		}
 	}
 	
-#else // not defined USE_OCULUS
-
-// 	bool oculus_connect() { return 0; }
-// 	void oculus_disconnect() {}
-// 	void oculus_configure() {}
-// 	void oculus_create_gpu_resources() {};
-// 	void oculus_release_gpu_resources() {}
-#endif
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
 
-	static t_symbol * vive_get_tracked_device_name(vr::IVRSystem *pHmd, vr::TrackedDeviceIndex_t unDevice, vr::TrackedDeviceProperty prop, vr::TrackedPropertyError *peError = NULL)
+	static t_symbol * steam_get_tracked_device_name(vr::IVRSystem *pHmd, vr::TrackedDeviceIndex_t unDevice, vr::TrackedDeviceProperty prop, vr::TrackedPropertyError *peError = NULL)
 	{
 		uint32_t unRequiredBufferLen = pHmd->GetStringTrackedDeviceProperty(unDevice, prop, NULL, 0, peError);
 		if (unRequiredBufferLen == 0) return _jit_sym_nothing;
@@ -1124,11 +1168,72 @@ struct Vr {
 		return sResult;
 	}
 
-	void vive_configure() {
-		if (!vive.hmd) return;
-		t_atom a[2];
-		t_symbol * display_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_TrackingSystemName_String);
-		t_symbol * driver_name = vive_get_tracked_device_name(vive.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_SerialNumber_String);
+	bool steam_connect() {
+		vr::EVRInitError eError = vr::VRInitError_None;
+		steam.hmd = vr::VR_Init(&eError, vr::VRApplication_Scene);
+		if (eError != vr::VRInitError_None) {
+			steam.hmd = 0;
+			object_error(&ob, "Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(eError));
+			return false;
+		}
+		if (!vr::VRCompositor()) {
+			object_error(&ob, "Compositor initialization failed.");
+			return false;
+		}
+
+		steam.mRenderModels = (vr::IVRRenderModels *)vr::VR_GetGenericInterface(vr::IVRRenderModels_Version, &eError);
+		if (!steam.mRenderModels) {
+			object_error(&ob, "Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(eError));
+		}
+
+		// TODO: move this out of connect() and into an attr setter? or only run if use_camera enabled?
+		if (steam.use_camera) {
+			steam.mCamera = vr::VRTrackedCamera(); // (vr::IVRTrackedCamera *)vr::VR_GetGenericInterface(vr::IVRTrackedCamera_Version, &eError);
+			if (!steam.mCamera) {
+				object_post(&ob, "failed to acquire camera -- is it enabled in the SteamVR settings?");
+			}
+			else {
+				vr::EVRTrackedCameraError camError;
+				bool bHasCamera = false;
+
+				camError = steam.mCamera->HasCamera(vr::k_unTrackedDeviceIndex_Hmd, &bHasCamera);
+				if (camError != vr::VRTrackedCameraError_None || !bHasCamera) {
+					object_post(&ob, "No Tracked Camera Available! (%s)\n", steam.mCamera->GetCameraErrorNameFromEnum(camError));
+					steam.mCamera = 0;
+				}
+
+				//if (use_camera) video_start();
+			}
+		}
+		//object_post(&ob, "steam connected");
+
+		return true;
+	}
+
+	void steam_disconnect() {
+		if (steam.hmd) {
+			//object_post(&ob, "oculus disconnect");
+
+			release_gpu_resources();
+
+			// TODO enable video
+			//video_stop();
+			vr::VR_Shutdown();
+
+			steam.hmd = 0;
+		}
+	}
+
+
+	void steam_configure() {
+		object_post(&ob, "steam configure");
+		if (!steam.hmd) {
+			object_error(&ob, "no SteamVR session to configure");
+			return;
+		}
+		t_atom a[6];
+		t_symbol * display_name = steam_get_tracked_device_name(steam.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_TrackingSystemName_String);
+		t_symbol * driver_name = steam_get_tracked_device_name(steam.hmd, vr::k_unTrackedDeviceIndex_Hmd, vr::Prop_SerialNumber_String);
 		atom_setsym(a, display_name);
 		outlet_anything(outlet_msg, gensym("display"), 1, a);
 		atom_setsym(a, driver_name);
@@ -1136,10 +1241,387 @@ struct Vr {
 
 		// determine the recommended texture size for scene capture:
 		uint32_t dim[2];
-		vive.hmd->GetRecommendedRenderTargetSize(&dim[0], &dim[1]);
-		fbo_texture_dim[0] = dim[0]*2; // side-by-side
+		steam.hmd->GetRecommendedRenderTargetSize(&dim[0], &dim[1]);
+		fbo_texture_dim[0] = dim[0] * 2; // side-by-side
 		fbo_texture_dim[1] = dim[1];
+
+		// maybe never: support disabling tracking options via ovr_ConfigureTracking()
+
+		// TODO -- move these to steam_bang(), like in oculus_bang(), in case they can ever change?
+		for (int i = 0; i < 2; i++) {
+			
+			steam.head2eye_mat[i] = to_glm(steam.hmd->GetEyeToHeadTransform((vr::Hmd_Eye)i));
+
+			float l, r, t, b;
+			steam.hmd->GetProjectionRaw((vr::Hmd_Eye)i, &l, &r, &t, &b);
+			atom_setfloat(a + 0, l * near_clip);
+			atom_setfloat(a + 1, r * near_clip);
+			atom_setfloat(a + 2, -b * near_clip);
+			atom_setfloat(a + 3, -t * near_clip);
+			atom_setfloat(a + 4, near_clip);
+			atom_setfloat(a + 5, far_clip);
+			outlet_anything(outlet_eye[i], ps_frustum, 6, a);
+		}
+
+		//object_post(&ob, "oculus configured");
 	}
+
+
+
+	// TODO
+	bool steam_create_gpu_resources() {
+		if (!steam.hmd) return false;
+		
+		// need to create rbo etc.?
+		glGenTextures(1, &steam.fbo_texture_id);
+		glBindTexture(GL_TEXTURE_2D, steam.fbo_texture_id);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, steam.fbo_texture_id, 0);
+
+		// TODO mirror
+		// TODO video camera
+	}
+
+	void steam_release_gpu_resources() {
+		// TODO
+		if (steam.fbo_texture_id) {
+			glDeleteTextures(1, &steam.fbo_texture_id);
+			steam.fbo_texture_id = 0;
+		}
+	}
+
+	void steam_bang() {
+		if (!steam.hmd) return;
+
+		t_atom a[6];
+
+		vr::VREvent_t event;
+		while (steam.hmd->PollNextEvent(&event, sizeof(event))) {
+			switch (event.eventType) {
+				case vr::VREvent_TrackedDeviceActivated:
+				{
+					atom_setlong(&a[0], event.trackedDeviceIndex);
+					outlet_anything(outlet_msg, gensym("attached"), 1, a);
+					//setupRenderModelForTrackedDevice(event.trackedDeviceIndex);
+				}
+				break;
+				case vr::VREvent_TrackedDeviceDeactivated:
+				{
+					atom_setlong(&a[0], event.trackedDeviceIndex);
+					outlet_anything(outlet_msg, gensym("detached"), 1, a);
+				}
+				break;
+				//case vr::VREvent_TrackedDeviceUpdated: break;
+				default: {
+					// TODO: lots of interesting events in openvr.h
+					// 
+					//atom_setlong(&a[0], event.eventType);
+					//outlet_anything(outlet_msg, gensym("event"), 1, a);
+				}
+			}
+		}
+
+		// get the tracking data here
+		vr::EVRCompositorError err = vr::VRCompositor()->WaitGetPoses(steam.pRenderPoseArray, vr::k_unMaxTrackedDeviceCount, NULL, 0);
+		if (err != vr::VRCompositorError_None) {
+			object_error(&ob, "WaitGetPoses error");
+			return;
+		}
+
+		// TODO: should we ignore button presses etc. if so?
+		bool inputCapturedByAnotherProcess = steam.hmd->IsInputFocusCapturedByAnotherProcess();
+
+		// check each device slot:
+		for (int i = 0; i < vr::k_unMaxTrackedDeviceCount; i++) {
+			const vr::TrackedDevicePose_t& trackedDevicePose = steam.pRenderPoseArray[i];
+			// if the device is actually connected:
+			if (trackedDevicePose.bDeviceIsConnected) {
+				
+				switch (steam.hmd->GetTrackedDeviceClass(i)) {
+				case vr::TrackedDeviceClass_HMD: {
+					if (trackedDevicePose.bPoseIsValid) {
+						t_symbol * id = ps_head;
+
+						glm::mat4 mat = steam_output_tracked_device(id, trackedDevicePose);
+
+						// use this to update cameras:
+						for (int i = 0; i < 2; i++) {
+
+							steam.head2eye_mat[i] = to_glm(steam.hmd->GetEyeToHeadTransform((vr::Hmd_Eye)i));
+							eye_mat[i] = mat * steam.head2eye_mat[i];
+
+							float l, r, t, b;
+							steam.hmd->GetProjectionRaw((vr::Hmd_Eye)i, &l, &r, &t, &b);
+							atom_setfloat(a + 0, l * near_clip);
+							atom_setfloat(a + 1, r * near_clip);
+							atom_setfloat(a + 2, -b * near_clip);
+							atom_setfloat(a + 3, -t * near_clip);
+							atom_setfloat(a + 4, near_clip);
+							atom_setfloat(a + 5, far_clip);
+							outlet_anything(outlet_eye[i], ps_frustum, 6, a);
+						}
+
+					}
+				} break;
+				case vr::TrackedDeviceClass_Controller: {
+					// check role to see if these are hands
+					vr::ETrackedControllerRole role = steam.hmd->GetControllerRoleForTrackedDeviceIndex(i);
+					switch (role) {
+					case vr::TrackedControllerRole_LeftHand:
+					case vr::TrackedControllerRole_RightHand: {
+						//if (trackedDevicePose.eTrackingResult == vr::TrackingResult_Running_OK) {
+
+						int hand = (role == vr::TrackedControllerRole_RightHand);
+						steam.mHandControllerDeviceIndex[hand] = i;
+
+						t_symbol * id = hand ? ps_right_hand : ps_left_hand;
+
+						if (trackedDevicePose.bPoseIsValid) {
+
+							steam_output_tracked_device(id, trackedDevicePose);
+
+						}
+
+						vr::VRControllerState_t cs;
+						//OpenVR SDK 1.0.4 adds a 3rd arg for size
+						steam.hmd->GetControllerState(i, &cs, sizeof(cs));
+
+						atom_setsym(a + 0, ps_trigger);
+						atom_setlong(a + 1, (cs.ulButtonTouched & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Trigger)) != 0);
+						atom_setfloat(a + 2, cs.rAxis[1].x);
+						outlet_anything(outlet_tracking, id, 3, a);
+
+						atom_setsym(a + 0, ps_buttons);
+						atom_setlong(a + 1, (cs.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_ApplicationMenu)) != 0);
+						atom_setlong(a + 2, (cs.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_Grip)) != 0);
+						outlet_anything(outlet_tracking, id, 3, a);
+
+						atom_setsym(a + 0, ps_pad);
+						atom_setlong(a + 1, (cs.ulButtonTouched & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Touchpad)) != 0);
+						atom_setfloat(a + 2, cs.rAxis[0].x);
+						atom_setfloat(a + 3, cs.rAxis[0].y);
+						atom_setlong(a + 4, (cs.ulButtonPressed & vr::ButtonMaskFromId(vr::k_EButton_SteamVR_Touchpad)) != 0);
+						outlet_anything(outlet_tracking, id, 5, a);
+
+						//}
+					}
+															  break;
+					default:
+						break;
+					}
+				} break;
+				case vr::TrackedDeviceClass_GenericTracker:
+				{
+					if (trackedDevicePose.bPoseIsValid) {
+
+						t_symbol * id = _jit_sym_nothing;
+						//Figure out which tracker it is using some kind of unique identifier
+						vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+						char buf[vr::k_unMaxPropertyStringSize];
+						if (vr::VRSystem()->GetStringTrackedDeviceProperty(i, vr::Prop_SerialNumber_String, buf, sizeof(buf), &err)) {
+							t_symbol * id = gensym(buf);
+						}
+
+						steam_output_tracked_device(id, trackedDevicePose);
+
+					}
+				} break;
+				default:
+					break;
+				}
+			}
+		}
+
+
+		// video:
+		//video_step();
+	}
+
+	// utility function for steam_bang()
+	glm::mat4 steam_output_tracked_device(t_symbol * id, const vr::TrackedDevicePose_t& trackedDevicePose) {
+		t_atom a[5];
+		
+		glm::mat4 mat = to_glm(trackedDevicePose.mDeviceToAbsoluteTracking);
+
+		glm::vec3 p = glm::vec3(mat[3]); // the translation component
+		glm::quat q = glm::quat_cast(mat); // the orientation component
+										   // adjusted to world space
+		glm::mat4 world_mat = view_mat * mat;
+		glm::vec3 p1 = glm::vec3(world_mat[3]); // the translation component
+		glm::quat q1 = glm::quat_cast(world_mat); // the orientation component
+
+		atom_setsym(a + 0, ps_tracked_position);
+		atom_setfloat(a + 1, p.x);
+		atom_setfloat(a + 2, p.y);
+		atom_setfloat(a + 3, p.z);
+		outlet_anything(outlet_tracking, id, 4, a);
+
+		atom_setsym(a + 0, ps_tracked_quat);
+		atom_setfloat(a + 1, q.x);
+		atom_setfloat(a + 2, q.y);
+		atom_setfloat(a + 3, q.z);
+		atom_setfloat(a + 4, q.w);
+		outlet_anything(outlet_tracking, id, 5, a);
+
+		atom_setsym(a + 0, _jit_sym_position);
+		atom_setfloat(a + 1, p1.x);
+		atom_setfloat(a + 2, p1.y);
+		atom_setfloat(a + 3, p1.z);
+		outlet_anything(outlet_tracking, id, 4, a);
+
+		atom_setsym(a + 0, _jit_sym_quat);
+		atom_setfloat(a + 1, q1.x);
+		atom_setfloat(a + 2, q1.y);
+		atom_setfloat(a + 3, q1.z);
+		atom_setfloat(a + 4, q1.w);
+		outlet_anything(outlet_tracking, id, 5, a);
+
+		// velocities:
+		// TODO: check if these are in tracking space
+		glm::vec3 vel = to_glm(trackedDevicePose.vVelocity);
+		glm::vec3 angvel = to_glm(trackedDevicePose.vAngularVelocity);
+		// rotated into world space (TODO is this appropriate? rotate or unrotate?)
+		vel = quat_rotate(view_quat, vel);
+		angvel = quat_rotate(view_quat, angvel);
+
+		atom_setsym(a + 0, ps_velocity);
+		atom_setfloat(a + 1, vel.x);
+		atom_setfloat(a + 2, vel.y);
+		atom_setfloat(a + 3, vel.z);
+		outlet_anything(outlet_tracking, id, 4, a);
+
+		atom_setsym(a + 0, ps_angular_velocity);
+		atom_setfloat(a + 1, angvel.x);
+		atom_setfloat(a + 2, angvel.y);
+		atom_setfloat(a + 3, angvel.z);
+		outlet_anything(outlet_tracking, id, 4, a);
+
+		return mat;
+	}
+
+
+	bool steam_submit_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
+		if (!steam.hmd) return false;
+
+		// main difference here with oculus is that we have to allocate the texture
+		// whereas with oculus, the driver gives us a texture (the textureChain stuff)
+
+		// TODO: check success
+		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim,
+			fbo_id, steam.fbo_texture_id, fbo_texture_dim, false)) {
+			object_error(&ob, "problem copying texture");
+			return false;
+		}
+
+		vr::EVRCompositorError err;
+		//GraphicsAPIConvention enum was renamed to TextureType in OpenVR SDK 1.0.5
+		vr::Texture_t vrTexture = { (void*)steam.fbo_texture_id, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
+
+		vr::VRTextureBounds_t leftBounds = { 0.f, 0.f, 0.5f, 1.f };
+		vr::VRTextureBounds_t rightBounds = { 0.5f, 0.f, 1.f, 1.f };
+
+		err = vr::VRCompositor()->Submit(vr::Eye_Left, &vrTexture, &leftBounds);
+		switch (err) {
+		case 0:
+			break;
+		case 1:
+			object_error(&ob, "submit error: Request failed.");
+			break;
+		case 100:
+			object_error(&ob, "submit error: Incompatible version.");
+			break;
+		case 101:
+			object_error(&ob, "submit error: Do not have focus.");
+			break;
+		case 102:
+			object_error(&ob, "submit error: Invalid texture.");
+			break;
+		case 103:
+			object_error(&ob, "submit error: Is not scene application.");
+			break;
+		case 104:
+			object_error(&ob, "submit error: Texture is on wrong device.");
+			break;
+		case 105:
+			object_error(&ob, "submit error: Texture uses unsupported format.");
+			break;
+		case 106:
+			object_error(&ob, "submit error: Shared textures not supported.");
+			break;
+		case 107:
+			object_error(&ob, "submit error: Index out of range.");
+			break;
+		case 108:
+			object_error(&ob, "submit error: Already submitted.");
+			break;
+		}
+
+		err = vr::VRCompositor()->Submit(vr::Eye_Right, &vrTexture, &rightBounds);
+
+		// is this necessary?
+		glClearColor(0, 0, 0, 1);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		// openvr header recommends this after submit:
+		glFlush();
+		glFinish();
+
+#if 0
+		if (!oculus.textureChain) {
+			object_error(&ob, "no texture set yet");
+			return false;
+		}
+
+		// get our next destination texture in the texture chain:
+		int curIndex;
+		ovr_GetTextureSwapChainCurrentIndex(oculus.session, oculus.textureChain, &curIndex);
+		GLuint oculus_target_texture_id;
+		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
+
+		// TODO: check success
+		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim,
+			fbo_id, oculus_target_texture_id, fbo_texture_dim, true)) {
+			object_error(&ob, "problem copying texture");
+			return false;
+		}
+
+		// and commit it
+		if (!OVR_SUCCESS(ovr_CommitTextureSwapChain(oculus.session, oculus.textureChain))) {
+			object_error(&ob, "problem committing texture chain");
+		}
+
+		// Submit frame with one layer we have.
+		// ovr_SubmitFrame returns once frame present is queued up and the next texture slot in the ovrSwatextureChain is available for the next frame. 
+		ovrLayerHeader* layers = &oculus.layer.Header;
+		ovrResult       result = ovr_SubmitFrame(oculus.session, oculus.frameIndex, nullptr, &layers, 1);
+		if (result == ovrError_DisplayLost) {
+			/*
+			TODO: If you receive ovrError_DisplayLost, the device was removed and the session is invalid.
+			Release the shared resources (ovr_DestroySwatextureChain), destroy the session (ovr_Destory),
+			recreate it (ovr_Create), and create new resources (ovr_CreateSwatextureChainXXX).
+			The application's existing private graphics resources do not need to be recreated unless
+			the new ovr_Create call returns a different GraphicsLuid.
+			*/
+			object_error(&ob, "fatal error connection lost.");
+
+			disconnect();
+
+			return false;
+
+		}
+		else {
+			oculus.frameIndex++;
+
+			return true;
+		}
+#endif
+		return true;
+	}
+
+
+#endif // ifdef USE_DRIVERS
 };
 
 void vr_connect(Vr * x) { x->connect(); }
@@ -1164,6 +1646,17 @@ x->perf();
 void oculusrift_recenter(oculusrift * x) {
 if (x->session) ovr_RecenterTrackingOrigin(x->session);
 }*/
+
+
+t_max_err vr_use_steam_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
+	t_atom_long l = atom_getlong(argv);
+	if (x->use_steam != l) {
+		x->disconnect();
+		x->use_steam = l;
+		x->connect();
+	}
+	return 0;
+}
 
 t_max_err vr_near_clip_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	x->near_clip = atom_getfloat(argv);
@@ -1257,7 +1750,7 @@ void ext_main(void* r) {
 	ps_angular_velocity = gensym("angular_velocity");
 	ps_trigger = gensym("trigger");
 	ps_hand_trigger = gensym("hand_trigger");
-	ps_thumbstick = gensym("thumbstick");
+	ps_pad = gensym("pad");
 	ps_buttons = gensym("buttons");
 
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
@@ -1313,7 +1806,7 @@ void ext_main(void* r) {
 	//CLASS_ATTR_LONG(c, "tracking_level", 0, oculusrift, tracking_level);
 	//CLASS_ATTR_ACCESSORS(c, "tracking_level", NULL, oculusrift_tracking_level_set);
 	
-	// vive-specific:
+	// steam-specific:
 	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
 	//class_addmethod(this_class, (method)vr_battery, "battery", A_GIMME, 0);
 	
@@ -1321,6 +1814,11 @@ void ext_main(void* r) {
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "far_clip", NULL, vr_far_clip_set);
+
+
+	CLASS_ATTR_LONG(this_class, "use_steam", 0, Vr, use_steam);
+	CLASS_ATTR_ACCESSORS(this_class, "use_steam", NULL, vr_use_steam_set);
+	CLASS_ATTR_STYLE(this_class, "use_steam", 0, "onoff");
 	
 	class_register(CLASS_BOX, this_class);
 }
