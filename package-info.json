@@ -1,0 +1,24 @@
+{
+	"author" : "Graham Wakefield",
+	"description" : "Virtual Reality HMDs for Max",
+	"homepatcher" : "vr.maxhelp",
+	"max_version_min" : "7.1",
+	"name" : "max-devkit",
+	"os" : {
+		"macintosh" : {
+			"platform" : [ "ia32", "x64" ],
+			"min_version" : "none"
+		},
+		"windows" : {
+			"platform" : [ "ia32", "x64" ],
+			"min_version" : "none"
+		}
+	},
+	"package_extra" : { 
+		"reverse_domain" : "com.cycling74",
+		"copyright" : "Copyright (c) 2017 Graham Wakefield"
+	},
+	"tags" : [ ],
+	"version" : "..",
+	"website" : "https://github.com/worldmaking/vr"
+}
