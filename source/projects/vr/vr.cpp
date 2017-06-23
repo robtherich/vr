@@ -25,7 +25,8 @@ extern "C" {
 	
 	#define USE_DRIVERS 1
 
-	#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__); } while (0)
+	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__); } while (0)
+	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug line %d:%s(): " fmt, __LINE__, __func__, __VA_ARGS__); } while (0)
 #else
 
 
@@ -37,6 +38,8 @@ extern "C" {
 	void * jit_object_register(void *x, t_symbol *s);
 	void * jit_object_findregistered(c74::max::t_symbol *s);
 	void * jit_object_register(void *x, c74::max::t_symbol *s);
+	long jit_atom_arg_getsym(t_symbol ** c, long idx, long ac, t_atom *av);
+	long jit_gl_report_error(char * prefix);
 
 }
 
@@ -136,11 +139,11 @@ struct Vr {
 	// attrs:
 	float near_clip = 0.15f;
 	float far_clip = 100.f;
-	int use_steam = 0;
-	
-	// configuration:
-	int connected = 0;
-	int dest_ready = 0;
+	t_atom_long use_steam = 0;
+	t_atom_long glfinishhack = 0;
+	// read-only
+	t_atom_long connected = 0;
+	t_atom_long dest_ready = 0;
 
 	glm::vec3 view_position;
 	glm::quat view_quat;
@@ -247,6 +250,7 @@ struct Vr {
 		// mark drawto gpu context as usable
 		// might not allocate gpu resources immediately, depends on whether driver is also connected
 		dest_ready = 1;
+		object_attr_touch(&ob, gensym("dest_ready"));
 
 		// try to connect:
 		if (!connected) connect();
@@ -272,6 +276,7 @@ struct Vr {
 
 		// mark drawto gpu context as unusable
 		dest_ready = 0;
+		object_attr_touch(&ob, gensym("dest_ready"));
 
 		release_gpu_resources();
 
@@ -287,29 +292,26 @@ struct Vr {
 		// try to see if the Oculus driver is available:
 		#ifdef USE_DRIVERS
 		if (use_steam) {
-			if (!steam_connect()) {
-				return false;
-			}
+			connected = steam_connect();
 		}
 		else {
-			if (!oculus_connect()) {
-				return false;
-			}
+			connected = oculus_connect();
 		}
 		#endif
 
-		// if successful:
-		connected = 1;
+		object_attr_touch(&ob, gensym("connected"));
 
-		VR_DEBUG_POST("connected");
+		VR_DEBUG_POST("connected %i", connected);
 
+		// whether or not we connected, configure
+		// so that offline simulation still works
 		configure();
 
-		// if gpu is ready, go ahead & make what we need
-		if (dest_ready) {
+		// if connected and gpu is ready, go ahead & make what we need
+		if (connected && dest_ready) {
 			create_gpu_resources();
 		}
-		return true;
+		return connected;
 	}
 	
 	// release the HMD
@@ -328,6 +330,7 @@ struct Vr {
 		#endif
 		
 		connected = 0;
+		object_attr_touch(&ob, gensym("connected"));
 	}
 
 	// called whenever HMD properties change
@@ -379,6 +382,11 @@ struct Vr {
 		// get drawto context:
 		t_symbol *context = object_attr_getsym(this, gensym("drawto"));
 
+		// create the FBO used to pass the scene texture to the driver:
+		if (!fbo_id) {
+			glGenFramebuffersEXT(1, &fbo_id);
+		}
+
 		#ifdef USE_DRIVERS
 		if (use_steam) {
 			steam_create_gpu_resources();
@@ -387,11 +395,6 @@ struct Vr {
 			oculus_create_gpu_resources();
 		}
 		#endif
-		
-		// create the FBO used to pass the scene texture to the driver:
-		if (!fbo_id) {
-			glGenFramebuffersEXT(1, &fbo_id);
-		}
 	}
 
 	void release_gpu_resources() {
@@ -401,12 +404,6 @@ struct Vr {
 			VR_DEBUG_POST("release_gpu_resources");
 			glDeleteFramebuffersEXT(1, &fbo_id);
 			fbo_id = 0;
-
-			
-			//if (rbo_id) {
-			//	glDeleteRenderbuffersEXT(1, &rbo_id);
-			//	rbo_id = 0;
-			//}
 
 			// TODO driver specific
 			#ifdef USE_DRIVERS
@@ -523,7 +520,7 @@ struct Vr {
 	
 	//////////////////////////////////////////////////////////////////////////////////////
 	
-	bool copy_texture_to_fbo(GLuint 		input_texture_id, 
+	bool fbo_copy_texture(GLuint 		input_texture_id, 
 							 t_atom_long 	input_texture_dim[2],
 							 GLuint 		fbo_id, 
 							 GLuint 		fbo_texture_id, 
@@ -554,7 +551,12 @@ struct Vr {
 			glMatrixMode(GL_PROJECTION);
 			glPushMatrix();
 			glLoadIdentity();
-			glOrtho(0.0, fbo_texture_dim[0], 0.0, fbo_texture_dim[1], -1, 1);
+			if (flipY) {
+				glOrtho(0.0, fbo_texture_dim[0], 0.0, fbo_texture_dim[1], -1, 1);
+			}
+			else {
+				glOrtho(0.0, fbo_texture_dim[0], fbo_texture_dim[1], 0., -1, 1);
+			}
 
 			glMatrixMode(GL_MODELVIEW);
 			glPushMatrix();
@@ -577,10 +579,10 @@ struct Vr {
 			// move to VA for rendering
 			// TODO flip vertical?
 			GLfloat tex_coords[] = {
-				(GLfloat)input_texture_dim[0], flipY ? 0.f : (GLfloat)input_texture_dim[1],
-				0.0, flipY ? 0.f : (GLfloat)input_texture_dim[1],
-				0.0, flipY ? (GLfloat)input_texture_dim[1] : 0.f,
-				(GLfloat)input_texture_dim[0], flipY ? (GLfloat)input_texture_dim[1] : 0.f
+				(GLfloat)input_texture_dim[0], 0.f,
+				0.0, 0.f,
+				0.0, (GLfloat)input_texture_dim[1],
+				(GLfloat)input_texture_dim[0], (GLfloat)input_texture_dim[1]
 			};
 
 			GLfloat verts[] = {
@@ -1127,7 +1129,7 @@ struct Vr {
 		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
 
 		// TODO: check success
-		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim, 
+		if (!fbo_copy_texture(input_texture_id, input_texture_dim, 
 			fbo_id, oculus_target_texture_id, fbo_texture_dim, true)) {
 			object_error(&ob, "problem copying texture");
 			return false;
@@ -1222,7 +1224,7 @@ struct Vr {
 
 	void steam_disconnect() {
 		if (steam.hmd) {
-			VR_DEBUG_POST("oculus disconnect");
+			VR_DEBUG_POST("steam disconnect");
 
 			release_gpu_resources();
 
@@ -1257,22 +1259,6 @@ struct Vr {
 
 		// maybe never: support disabling tracking options via ovr_ConfigureTracking()
 
-		// TODO -- move these to steam_bang(), like in oculus_bang(), in case they can ever change?
-		for (int i = 0; i < 2; i++) {
-			
-			steam.head2eye_mat[i] = to_glm(steam.hmd->GetEyeToHeadTransform((vr::Hmd_Eye)i));
-
-			float l, r, t, b;
-			steam.hmd->GetProjectionRaw((vr::Hmd_Eye)i, &l, &r, &t, &b);
-			atom_setfloat(a + 0, l * near_clip);
-			atom_setfloat(a + 1, r * near_clip);
-			atom_setfloat(a + 2, -b * near_clip);
-			atom_setfloat(a + 3, -t * near_clip);
-			atom_setfloat(a + 4, near_clip);
-			atom_setfloat(a + 5, far_clip);
-			outlet_anything(outlet_eye[i], ps_frustum, 6, a);
-		}
-
 		VR_DEBUG_POST("steam configured");
 	}
 
@@ -1280,18 +1266,43 @@ struct Vr {
 
 	// TODO
 	bool steam_create_gpu_resources() {
+		VR_DEBUG_POST("steam_create_gpu_resources");
 		if (!steam.hmd) return false;
-		
-		// need to create rbo etc.?
+
 		glGenTextures(1, &steam.fbo_texture_id);
-		glBindTexture(GL_TEXTURE_2D, steam.fbo_texture_id);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-		glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, steam.fbo_texture_id, 0);
+		glGenRenderbuffersEXT(1, &rbo_id);
+
+		VR_DEBUG_POST("fbo %d rbo %d tex %d", fbo_id, rbo_id, steam.fbo_texture_id);
+
+		GLint previousFBO;	// make sure we pop out to the right FBO
+		glGetIntegerv(GL_FRAMEBUFFER_BINDING_EXT, &previousFBO);
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo_id);
+		{
+			glBindTexture(GL_TEXTURE_2D, steam.fbo_texture_id);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, steam.fbo_texture_id, 0);
+			// TODO: is rbo actually necessary?
+			glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, rbo_id);
+			glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, fbo_texture_dim[0], fbo_texture_dim[1]);
+			glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, rbo_id);
+			// check FBO status
+			GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+			if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
+				object_error(&ob, "failed to create Jitter FBO");
+				return false;
+			}
+		}
+		glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, previousFBO);
+
 
 		// TODO mirror
 		// TODO video camera
+
+		//jit_gl_report_error("steam_create_gpu_resources done");
+
+		return true;
 	}
 
 	void steam_release_gpu_resources() {
@@ -1299,6 +1310,11 @@ struct Vr {
 		if (steam.fbo_texture_id) {
 			glDeleteTextures(1, &steam.fbo_texture_id);
 			steam.fbo_texture_id = 0;
+		}
+
+		if (rbo_id) {
+			glDeleteRenderbuffersEXT(1, &rbo_id);
+			rbo_id = 0;
 		}
 	}
 
@@ -1333,6 +1349,22 @@ struct Vr {
 			}
 		}
 
+		for (int i = 0; i < 2; i++) {
+
+			float l, r, t, b;
+			steam.hmd->GetProjectionRaw((vr::Hmd_Eye)i, &l, &r, &t, &b);
+
+			//VR_DEBUG_POST("frustum l %f r %f t %f b %f", l, r, t, b);
+
+			atom_setfloat(a + 0, l * near_clip);
+			atom_setfloat(a + 1, r * near_clip);
+			atom_setfloat(a + 2, -b * near_clip);
+			atom_setfloat(a + 3, -t * near_clip);
+			atom_setfloat(a + 4, near_clip);
+			atom_setfloat(a + 5, far_clip);
+			outlet_anything(outlet_eye[i], ps_frustum, 6, a);
+		}
+
 		// get the tracking data here
 		vr::EVRCompositorError err = vr::VRCompositor()->WaitGetPoses(steam.pRenderPoseArray, vr::k_unMaxTrackedDeviceCount, NULL, 0);
 		if (err != vr::VRCompositorError_None) {
@@ -1361,13 +1393,16 @@ struct Vr {
 
 							steam.head2eye_mat[i] = to_glm(steam.hmd->GetEyeToHeadTransform((vr::Hmd_Eye)i));
 							eye_mat[i] = mat * steam.head2eye_mat[i];
-
+							
 							float l, r, t, b;
 							steam.hmd->GetProjectionRaw((vr::Hmd_Eye)i, &l, &r, &t, &b);
 							atom_setfloat(a + 0, l * near_clip);
 							atom_setfloat(a + 1, r * near_clip);
-							atom_setfloat(a + 2, -b * near_clip);
-							atom_setfloat(a + 3, -t * near_clip);
+							// TODO: check if this is right for Vive?
+							//atom_setfloat(a + 2, -b * near_clip);
+							//atom_setfloat(a + 3, -t * near_clip);
+							atom_setfloat(a + 2, t * near_clip);
+							atom_setfloat(a + 3, b * near_clip);
 							atom_setfloat(a + 4, near_clip);
 							atom_setfloat(a + 5, far_clip);
 							outlet_anything(outlet_eye[i], ps_frustum, 6, a);
@@ -1519,7 +1554,7 @@ struct Vr {
 		// whereas with oculus, the driver gives us a texture (the textureChain stuff)
 
 		// TODO: check success
-		if (!copy_texture_to_fbo(input_texture_id, input_texture_dim,
+		if (!fbo_copy_texture(input_texture_id, input_texture_dim,
 			fbo_id, steam.fbo_texture_id, fbo_texture_dim, false)) {
 			object_error(&ob, "problem copying texture");
 			return false;
@@ -1527,6 +1562,7 @@ struct Vr {
 
 		vr::EVRCompositorError err;
 		//GraphicsAPIConvention enum was renamed to TextureType in OpenVR SDK 1.0.5
+		// TODO: expose different colour options as attributes?
 		vr::Texture_t vrTexture = { (void*)steam.fbo_texture_id, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
 
 		vr::VRTextureBounds_t leftBounds = { 0.f, 0.f, 0.5f, 1.f };
@@ -1570,14 +1606,19 @@ struct Vr {
 
 		err = vr::VRCompositor()->Submit(vr::Eye_Right, &vrTexture, &rightBounds);
 
-		// is this necessary?
-		glClearColor(0, 0, 0, 1);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+		if (glfinishhack) {
+			// is this necessary?
+			glClearColor(0, 0, 0, 1);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// openvr header recommends this after submit:
-		glFlush();
-		glFinish();
+			// openvr header recommends this after submit:
+			glFlush();
+			glFinish();
 
+			// issue on openvr suggests only this is needed
+			// https://github.com/ValveSoftware/openvr/issues/460
+			// glMemoryBarrier(GL_TEXTURE_UPDATE_BARRIER_BIT);
+		}
 		return true;
 	}
 
@@ -1588,8 +1629,6 @@ struct Vr {
 void vr_connect(Vr * x) { x->connect(); }
 void vr_disconnect(Vr * x) { x->disconnect(); }
 void vr_configure(Vr * x) { x->configure(); }
-void vr_dest_changed(Vr * x) { x->dest_changed(); }
-void vr_dest_closing(Vr * x) { x->dest_closing(); }
 void vr_bang(Vr * x) { x->bang(); }
 
 void vr_jit_gl_texture(Vr * x, t_symbol * s, long argc, t_atom * argv) {
@@ -1608,6 +1647,10 @@ void oculusrift_recenter(oculusrift * x) {
 if (x->session) ovr_RecenterTrackingOrigin(x->session);
 }*/
 
+
+void vr_dest_changed(Vr * x) { x->dest_changed(); }
+void vr_dest_closing(Vr * x) { x->dest_closing(); }
+void vr_draw(Vr * x) {} // not used
 
 t_max_err vr_use_steam_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	t_atom_long l = atom_getlong(argv);
@@ -1666,7 +1709,12 @@ return 0;
 void* vr_new(t_symbol* name, long argc, t_atom* argv) {
 	Vr * x = (Vr *)object_alloc(this_class);
 	if (x) {
-		t_symbol * drawto = atom_getsym(argv);
+		t_symbol * drawto = _jit_sym_nothing;
+		long attrstart = max_jit_attr_args_offset(argc, argv);
+		if (attrstart && argv) {
+			
+			jit_atom_arg_getsym(&drawto, 0, attrstart, argv);
+		}
 		x = new (x)Vr(drawto);
 		// apply attrs:
 		attr_args_process(x, (short)argc, argv);
@@ -1744,7 +1792,7 @@ void ext_main(void* r) {
 	void * ob3d = jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
 	
 	// define our OB3D draw methods
-	//jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
+	jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
 	jit_class_addmethod(this_class, (method)(vr_dest_closing), "dest_closing", A_CANT, 0L);
 	jit_class_addmethod(this_class, (method)(vr_dest_changed), "dest_changed", A_CANT, 0L);
 	// must register for ob3d use
@@ -1789,6 +1837,18 @@ void ext_main(void* r) {
 	CLASS_ATTR_LONG(this_class, "use_steam", 0, Vr, use_steam);
 	CLASS_ATTR_ACCESSORS(this_class, "use_steam", NULL, vr_use_steam_set);
 	CLASS_ATTR_STYLE(this_class, "use_steam", 0, "onoff");
+
+
+	CLASS_ATTR_LONG(this_class, "glfinishhack", 0, Vr, glfinishhack);
+	CLASS_ATTR_STYLE(this_class, "glfinishhack", 0, "onoff");
+	
+
+
+	// read-only:
+	CLASS_ATTR_LONG(this_class, "connected", ATTR_SET_OPAQUE, Vr, connected);
+	CLASS_ATTR_STYLE(this_class, "connected", 0, "onoff");
+	CLASS_ATTR_LONG(this_class, "dest_ready", ATTR_SET_OPAQUE, Vr, dest_ready);
+	CLASS_ATTR_STYLE(this_class, "dest_ready", 0, "onoff");
 	
 	class_register(CLASS_BOX, this_class);
 }
