@@ -27,8 +27,7 @@ Integrating with spatial audio
 
 ## Eng
 
-- Auto-detect available drivers
-- Fix the buggy SteamVR implementation
+- mirror texture outputs
 - Battery status
 - Controller vibration
 - Front-camera (VIVE)

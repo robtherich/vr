@@ -52,7 +52,6 @@ extern "C" {
 
 #include "al_math.h"
 
-
 static bool oculus_initialized = 0;
 
 static t_symbol * ps_glid;
@@ -72,6 +71,9 @@ static t_symbol * ps_trigger;
 static t_symbol * ps_hand_trigger;
 static t_symbol * ps_pad;
 static t_symbol * ps_buttons;
+
+static t_symbol * ps_oculus;
+static t_symbol * ps_steam;
 
 // jitter uses xyzw format
 // glm constructor uses wxyz format
@@ -126,6 +128,7 @@ glm::mat4 to_glm(vr::HmdMatrix44_t const m) {
 static t_class* this_class = nullptr;
 
 struct Vr {
+
 	t_object ob;
 	void * ob3d;
 	void * outlet_msg;
@@ -133,17 +136,18 @@ struct Vr {
 	void * outlet_tracking;
 	//void * outlet_node;
 	void * outlet_eye[2];
-	void * outlet_tex;
+	void * outlet_node;
 	int attrs_ready = 0;
+	int dest_ready = 0;
 	
 	// attrs:
 	float near_clip = 0.15f;
 	float far_clip = 100.f;
-	t_atom_long use_steam = 0;
+	t_atom_long preferred_driver_only = 0;
 	t_atom_long glfinishhack = 0;
-	// read-only
+	t_symbol * driver;
 	t_atom_long connected = 0;
-	t_atom_long dest_ready = 0;
+	t_atom_long oculus_available = 0, steam_available = 0;
 
 	glm::vec3 view_position;
 	glm::quat view_quat;
@@ -156,7 +160,7 @@ struct Vr {
 	// (we can't submit the jit_gl_texture directly)
 	GLuint fbo_id = 0;
 	GLuint rbo_id = 0;
-	t_atom_long fbo_texture_dim[2];
+	t_atom_long fbo_dim[2];
 
 	// driver-specific:
 	struct {
@@ -212,11 +216,13 @@ struct Vr {
 		//outlet_node = outlet_new(&ob, NULL);
 		outlet_eye[1] = outlet_new(&ob, NULL);
 		outlet_eye[0] = outlet_new(&ob, NULL);
-		outlet_tex = outlet_new(&ob, "jit_gl_texture");
+		outlet_node = outlet_new(&ob, NULL);
+
+		driver = gensym("oculus");
 		
 		// some whatever defaults, will get overwritten when driver connects
-		fbo_texture_dim[0] = 1920;
-		fbo_texture_dim[1] = 1080;
+		fbo_dim[0] = 1920;
+		fbo_dim[1] = 1080;
 
 		// default eye positions (for offline testing)
 		for (int eye = 0; eye < 2; eye++) {
@@ -228,6 +234,8 @@ struct Vr {
 
 			steam.mHandControllerDeviceIndex[eye] = -1;
 		}
+
+		update_availability();
 	}
 
 	~Vr() {
@@ -283,29 +291,62 @@ struct Vr {
 		return JIT_ERR_NONE;
 	}
 
+	void update_availability() {
+#ifdef USE_DRIVERS
+		oculus_available = oculus_is_available();
+		object_attr_touch(&ob, gensym("oculus_available"));
+		steam_available = steam_is_available();
+		object_attr_touch(&ob, gensym("steam_available"));
+#endif
+		t_atom a[1];
+
+		atom_setlong(a, oculus_available);
+		outlet_anything(outlet_node, gensym("oculus_available"), 1, a);
+		atom_setlong(a, steam_available);
+		outlet_anything(outlet_node, gensym("steam_available"), 1, a);
+	}
+
 	// attempt to acquire the HMD
 	bool connect() {
 		if (connected) return true; // because we're already connected!
 		VR_DEBUG_POST("connect");
 
-		// TODO driver specific
-		// try to see if the Oculus driver is available:
+		update_availability();
+
 		#ifdef USE_DRIVERS
-		if (use_steam) {
+		// figure out which driver we want to use:
+		if (driver == ps_steam) {
 			connected = steam_connect();
-		}
-		else {
+			if (!connected && !preferred_driver_only) {
+				connected = oculus_connect();
+			}
+		} else {
 			connected = oculus_connect();
+			if (!connected && !preferred_driver_only) {
+				connected = steam_connect();
+			}
 		}
 		#endif
 
 		object_attr_touch(&ob, gensym("connected"));
+		object_attr_touch(&ob, gensym("driver"));
+
 
 		VR_DEBUG_POST("connected %i", connected);
 
 		// whether or not we connected, configure
 		// so that offline simulation still works
 		configure();
+
+
+		t_atom a[2];
+		atom_setlong(a, connected);
+		outlet_anything(outlet_msg, gensym("connected"), 1, a);
+		atom_setsym(a, driver);
+		outlet_anything(outlet_msg, gensym("driver"), 1, a);
+		atom_setlong(a + 0, fbo_dim[0]);
+		atom_setlong(a + 1, fbo_dim[1]);
+		outlet_anything(outlet_msg, _jit_sym_dim, 2, a);
 
 		// if connected and gpu is ready, go ahead & make what we need
 		if (connected && dest_ready) {
@@ -321,7 +362,7 @@ struct Vr {
 
 		// TODO: driver-specific stuff
 		#ifdef USE_DRIVERS
-		if (use_steam) {
+		if (driver == ps_steam) {
 			steam_disconnect();
 		}
 		else {
@@ -342,7 +383,7 @@ struct Vr {
 		if (connected) {
 			// TODO get driver details & output
 			#ifdef USE_DRIVERS
-			if (use_steam) {
+			if (driver == ps_steam) {
 				steam_configure();
 			}
 			else {
@@ -352,9 +393,11 @@ struct Vr {
 		}
 
 		// output recommended texture dim:
-		atom_setlong(a + 0, fbo_texture_dim[0]);
-		atom_setlong(a + 1, fbo_texture_dim[1]);
-		outlet_anything(outlet_msg, _jit_sym_dim, 2, a);
+		atom_setlong(a + 0, fbo_dim[0]);
+		atom_setlong(a + 1, fbo_dim[1]);
+		outlet_anything(outlet_node, _jit_sym_dim, 2, a);
+		atom_setlong(a, 0);
+		outlet_anything(outlet_node, _jit_sym_adapt, 1, a);
 
 		// output camera properties:
 		atom_setsym(a, ps_frustum);
@@ -388,7 +431,7 @@ struct Vr {
 		}
 
 		#ifdef USE_DRIVERS
-		if (use_steam) {
+		if (driver == ps_steam) {
 			steam_create_gpu_resources();
 		}
 		else {
@@ -407,7 +450,7 @@ struct Vr {
 
 			// TODO driver specific
 			#ifdef USE_DRIVERS
-			if (use_steam) {
+			if (driver == ps_steam) {
 				steam_release_gpu_resources();
 			}
 			else {
@@ -433,7 +476,7 @@ struct Vr {
 		// TODO: driver poll events
 		if (connected) {
 			#ifdef USE_DRIVERS
-			if (use_steam) {
+			if (driver == ps_steam) {
 				steam_bang();
 			}
 			else {
@@ -497,7 +540,7 @@ struct Vr {
 
 			// TODO driver specific
 			#ifdef USE_DRIVERS
-			if (use_steam) {
+			if (driver == ps_steam) {
 				if (!steam_submit_texture(input_texture_id, input_texture_dim)) {
 					object_error(&ob, "problem submitting texture");
 				}
@@ -512,10 +555,8 @@ struct Vr {
 		
 		t_atom a[1];
 		if (connected) {
-			// TODO: use mirror textures here if desired?
+			// TODO: output mirror textures here if desired?
 		}
-		atom_setsym(a, intexture);
-		outlet_anything(outlet_tex, ps_jit_gl_texture, 1, a);
 	}
 	
 	//////////////////////////////////////////////////////////////////////////////////////
@@ -524,7 +565,7 @@ struct Vr {
 							 t_atom_long 	input_texture_dim[2],
 							 GLuint 		fbo_id, 
 							 GLuint 		fbo_texture_id, 
-							 t_atom_long 	fbo_texture_dim[2],
+							 t_atom_long 	fbo_dim[2],
 							 bool flipY = true) {
 		// copy our glid source into the inFBO destination
 		// save some state
@@ -546,16 +587,16 @@ struct Vr {
 			glPushMatrix();
 			glLoadIdentity();
 
-			glViewport(0, 0, fbo_texture_dim[0], fbo_texture_dim[1]);
+			glViewport(0, 0, fbo_dim[0], fbo_dim[1]);
 			
 			glMatrixMode(GL_PROJECTION);
 			glPushMatrix();
 			glLoadIdentity();
 			if (flipY) {
-				glOrtho(0.0, fbo_texture_dim[0], 0.0, fbo_texture_dim[1], -1, 1);
+				glOrtho(0.0, fbo_dim[0], 0.0, fbo_dim[1], -1, 1);
 			}
 			else {
-				glOrtho(0.0, fbo_texture_dim[0], fbo_texture_dim[1], 0., -1, 1);
+				glOrtho(0.0, fbo_dim[0], fbo_dim[1], 0., -1, 1);
 			}
 
 			glMatrixMode(GL_MODELVIEW);
@@ -586,10 +627,10 @@ struct Vr {
 			};
 
 			GLfloat verts[] = {
-				(GLfloat)fbo_texture_dim[0], (GLfloat)fbo_texture_dim[1],
-				0.0, (GLfloat)fbo_texture_dim[1],
+				(GLfloat)fbo_dim[0], (GLfloat)fbo_dim[1],
+				0.0, (GLfloat)fbo_dim[1],
 				0.0, 0.0,
-				(GLfloat)fbo_texture_dim[0], 0.0
+				(GLfloat)fbo_dim[0], 0.0
 			};
 			
 			glEnableClientState(GL_TEXTURE_COORD_ARRAY);
@@ -660,7 +701,14 @@ struct Vr {
 		oculus_initialized = 0;
 	}
 
+	bool oculus_is_available() {
+		ovrDetectResult res = ovr_Detect(250); // ms timeout
+		return (res.IsOculusServiceRunning && res.IsOculusHMDConnected);
+	}
+
 	int oculusrift_init() {
+		if (!oculus_available) return 0;
+
 		if (oculus_initialized) return 1;
 		VR_DEBUG_POST("oculus init");
 
@@ -720,6 +768,7 @@ struct Vr {
 			return false;
 		}
 
+		driver = ps_oculus;
 		return true;
 	}
 
@@ -731,6 +780,9 @@ struct Vr {
 
 			ovr_Destroy(oculus.session);
 			oculus.session = 0;
+
+			// let go of driver, so steam can use it
+			oculusrift_quit();
 		}
 	}
 
@@ -824,8 +876,8 @@ struct Vr {
 		oculus.layer.Viewport[1].Size.h = recommenedTex1Size.h;
 
 		// determine the recommended texture size for scene capture:
-		fbo_texture_dim[0] = recommenedTex0Size.w + recommenedTex1Size.w; // side-by-side
-		fbo_texture_dim[1] = AL_MAX(recommenedTex0Size.h, recommenedTex1Size.h);
+		fbo_dim[0] = recommenedTex0Size.w + recommenedTex1Size.w; // side-by-side
+		fbo_dim[1] = AL_MAX(recommenedTex0Size.h, recommenedTex1Size.h);
 
 		switch (oculus.tracking_level) {
 		case int(ovrTrackingOrigin_FloorLevel) :
@@ -850,8 +902,8 @@ struct Vr {
 			ovrTextureSwapChainDesc desc = {};
 			desc.Type = ovrTexture_2D;
 			desc.ArraySize = 1;
-			desc.Width = fbo_texture_dim[0];
-			desc.Height = fbo_texture_dim[1];
+			desc.Width = fbo_dim[0];
+			desc.Height = fbo_dim[1];
 			desc.MipLevels = 1;
 			desc.Format = OVR_FORMAT_R8G8B8A8_UNORM_SRGB;
 			desc.SampleCount = 1;
@@ -1130,7 +1182,7 @@ struct Vr {
 
 		// TODO: check success
 		if (!fbo_copy_texture(input_texture_id, input_texture_dim, 
-			fbo_id, oculus_target_texture_id, fbo_texture_dim, true)) {
+			fbo_id, oculus_target_texture_id, fbo_dim, true)) {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
@@ -1180,7 +1232,14 @@ struct Vr {
 		return sResult;
 	}
 
+	bool steam_is_available() {
+		return (vr::VR_IsRuntimeInstalled() && vr::VR_IsHmdPresent());
+	}
+
 	bool steam_connect() {
+
+		if (!steam_available) return false;
+
 		vr::EVRInitError eError = vr::VRInitError_None;
 		steam.hmd = vr::VR_Init(&eError, vr::VRApplication_Scene);
 		if (eError != vr::VRInitError_None) {
@@ -1193,10 +1252,11 @@ struct Vr {
 			return false;
 		}
 
+		/*
 		steam.mRenderModels = (vr::IVRRenderModels *)vr::VR_GetGenericInterface(vr::IVRRenderModels_Version, &eError);
 		if (!steam.mRenderModels) {
 			object_error(&ob, "Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(eError));
-		}
+		}*/
 
 		// TODO: move this out of connect() and into an attr setter? or only run if use_camera enabled?
 		if (steam.use_camera) {
@@ -1219,6 +1279,7 @@ struct Vr {
 		}
 		VR_DEBUG_POST("steam connected");
 
+		driver = ps_steam;
 		return true;
 	}
 
@@ -1230,7 +1291,8 @@ struct Vr {
 
 			// TODO enable video
 			//video_stop();
-			vr::VR_Shutdown();
+			
+			//vr::VR_Shutdown();
 
 			steam.hmd = 0;
 		}
@@ -1254,8 +1316,8 @@ struct Vr {
 		// determine the recommended texture size for scene capture:
 		uint32_t dim[2];
 		steam.hmd->GetRecommendedRenderTargetSize(&dim[0], &dim[1]);
-		fbo_texture_dim[0] = dim[0] * 2; // side-by-side
-		fbo_texture_dim[1] = dim[1];
+		fbo_dim[0] = dim[0] * 2; // side-by-side
+		fbo_dim[1] = dim[1];
 
 		// maybe never: support disabling tracking options via ovr_ConfigureTracking()
 
@@ -1281,11 +1343,11 @@ struct Vr {
 			glBindTexture(GL_TEXTURE_2D, steam.fbo_texture_id);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_texture_dim[0], fbo_texture_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fbo_dim[0], fbo_dim[1], 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
 			glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, GL_TEXTURE_2D, steam.fbo_texture_id, 0);
 			// TODO: is rbo actually necessary?
 			glBindRenderbufferEXT(GL_RENDERBUFFER_EXT, rbo_id);
-			glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, fbo_texture_dim[0], fbo_texture_dim[1]);
+			glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH_COMPONENT, fbo_dim[0], fbo_dim[1]);
 			glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT, GL_DEPTH_ATTACHMENT_EXT, GL_RENDERBUFFER_EXT, rbo_id);
 			// check FBO status
 			GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
@@ -1555,7 +1617,7 @@ struct Vr {
 
 		// TODO: check success
 		if (!fbo_copy_texture(input_texture_id, input_texture_dim,
-			fbo_id, steam.fbo_texture_id, fbo_texture_dim, false)) {
+			fbo_id, steam.fbo_texture_id, fbo_dim, false)) {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
@@ -1602,9 +1664,49 @@ struct Vr {
 		case 108:
 			object_error(&ob, "submit error: Already submitted.");
 			break;
+		default:
+			object_error(&ob, "submit error: other");
+			break;
 		}
 
 		err = vr::VRCompositor()->Submit(vr::Eye_Right, &vrTexture, &rightBounds);
+		switch (err) {
+		case 0:
+			break;
+		case 1:
+			object_error(&ob, "submit error: Request failed.");
+			break;
+		case 100:
+			object_error(&ob, "submit error: Incompatible version.");
+			break;
+		case 101:
+			object_error(&ob, "submit error: Do not have focus.");
+			break;
+		case 102:
+			object_error(&ob, "submit error: Invalid texture.");
+			break;
+		case 103:
+			object_error(&ob, "submit error: Is not scene application.");
+			break;
+		case 104:
+			object_error(&ob, "submit error: Texture is on wrong device.");
+			break;
+		case 105:
+			object_error(&ob, "submit error: Texture uses unsupported format.");
+			break;
+		case 106:
+			object_error(&ob, "submit error: Shared textures not supported.");
+			break;
+		case 107:
+			object_error(&ob, "submit error: Index out of range.");
+			break;
+		case 108:
+			object_error(&ob, "submit error: Already submitted.");
+			break;
+		default:
+			object_error(&ob, "submit error: other");
+			break;
+		}
 
 		if (glfinishhack) {
 			// is this necessary?
@@ -1652,19 +1754,38 @@ void vr_dest_changed(Vr * x) { x->dest_changed(); }
 void vr_dest_closing(Vr * x) { x->dest_closing(); }
 void vr_draw(Vr * x) {} // not used
 
-t_max_err vr_use_steam_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
+
+t_max_err vr_connected_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	t_atom_long l = atom_getlong(argv);
-	if (x->use_steam != l) {
+	if (x->connected != l) {
+		if (l) {
+			x->connect();
+		}
+		else {
+			x->disconnect();
+		}
+	}
+	return 0;
+}
+
+t_max_err vr_driver_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
+	t_symbol * l = atom_getsym(argv);
+	// aliases:
+	if (l == gensym("steam") || l == gensym("steamvr") || l == gensym("vive") || l == gensym("htcvive")) {
+		l = ps_steam;
+	}
+	// apply:
+	if (x->driver != l) {
 		if (x->connected) {
 			// auto re-connect
 			x->disconnect();
-			x->use_steam = l;
+			x->driver = l;
 			x->connect();
 		}
 		else {
 			// don't auto-connect. 
 			// this guard necessary so that the initial constructor doesn't attempt to connect to early
-			x->use_steam = 1;
+			x->driver = l;
 		}
 	}
 	return 0;
@@ -1771,6 +1892,9 @@ void ext_main(void* r) {
 	ps_pad = gensym("pad");
 	ps_buttons = gensym("buttons");
 
+	ps_oculus = gensym("oculus");
+	ps_steam = gensym("steam");
+
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
 	
 	long ob3d_flags = jit_ob3d_flags::NO_MATRIXOUTPUT 
@@ -1833,22 +1957,24 @@ void ext_main(void* r) {
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "far_clip", NULL, vr_far_clip_set);
 
-
-	CLASS_ATTR_LONG(this_class, "use_steam", 0, Vr, use_steam);
-	CLASS_ATTR_ACCESSORS(this_class, "use_steam", NULL, vr_use_steam_set);
-	CLASS_ATTR_STYLE(this_class, "use_steam", 0, "onoff");
+	CLASS_ATTR_LONG(this_class, "connected", 0, Vr, connected);
+	CLASS_ATTR_ACCESSORS(this_class, "connected", NULL, vr_connected_set);
+	CLASS_ATTR_STYLE(this_class, "connected", 0, "onoff");
 
 
 	CLASS_ATTR_LONG(this_class, "glfinishhack", 0, Vr, glfinishhack);
 	CLASS_ATTR_STYLE(this_class, "glfinishhack", 0, "onoff");
-	
 
+	CLASS_ATTR_LONG(this_class, "oculus_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, oculus_available);
+	CLASS_ATTR_STYLE(this_class, "oculus_available", 0, "onoff");
+	CLASS_ATTR_LONG(this_class, "steam_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, steam_available);
+	CLASS_ATTR_STYLE(this_class, "steam_available", 0, "onoff");
 
-	// read-only:
-	CLASS_ATTR_LONG(this_class, "connected", ATTR_SET_OPAQUE, Vr, connected);
-	CLASS_ATTR_STYLE(this_class, "connected", 0, "onoff");
-	CLASS_ATTR_LONG(this_class, "dest_ready", ATTR_SET_OPAQUE, Vr, dest_ready);
-	CLASS_ATTR_STYLE(this_class, "dest_ready", 0, "onoff");
+	CLASS_ATTR_SYM(this_class, "driver", 0, Vr, driver);
+	CLASS_ATTR_ACCESSORS(this_class, "driver", NULL, vr_driver_set);
+	CLASS_ATTR_LONG(this_class, "preferred_driver_only", 0, Vr, preferred_driver_only);
+	CLASS_ATTR_STYLE(this_class, "preferred_driver_only", 0, "onoff");
+
 	
 	class_register(CLASS_BOX, this_class);
 }
