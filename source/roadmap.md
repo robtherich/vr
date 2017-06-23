@@ -6,7 +6,6 @@ Stuff to work on (aka feature requests)
 Drawing demo (minimal tiltbrush-like)
 
 Physics demos
-- squirting particles
 - smashing hands into balloons
 - picking up & throwing objects
 
@@ -27,6 +26,8 @@ Integrating with spatial audio
 
 ## Eng
 
+- chaperone data
+- rendermodels
 - mirror texture outputs
 - Battery status
 - Controller vibration

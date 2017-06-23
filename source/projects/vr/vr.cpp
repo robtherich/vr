@@ -301,9 +301,9 @@ struct Vr {
 		t_atom a[1];
 
 		atom_setlong(a, oculus_available);
-		outlet_anything(outlet_node, gensym("oculus_available"), 1, a);
+		outlet_anything(outlet_msg, gensym("oculus_available"), 1, a);
 		atom_setlong(a, steam_available);
-		outlet_anything(outlet_node, gensym("steam_available"), 1, a);
+		outlet_anything(outlet_msg, gensym("steam_available"), 1, a);
 	}
 
 	// attempt to acquire the HMD
