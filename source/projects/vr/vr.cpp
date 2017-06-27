@@ -64,6 +64,7 @@ static t_symbol * ps_tracked_quat;
 static t_symbol * ps_head;
 static t_symbol * ps_left_hand;
 static t_symbol * ps_right_hand;
+static t_symbol * ps_generic;
 
 static t_symbol * ps_velocity;
 static t_symbol * ps_angular_velocity;
@@ -1523,12 +1524,12 @@ struct Vr {
 				{
 					if (trackedDevicePose.bPoseIsValid) {
 
-						t_symbol * id = _jit_sym_nothing;
+						t_symbol * id = ps_generic;
 						//Figure out which tracker it is using some kind of unique identifier
 						vr::ETrackedPropertyError err = vr::TrackedProp_Success;
 						char buf[vr::k_unMaxPropertyStringSize];
 						if (vr::VRSystem()->GetStringTrackedDeviceProperty(i, vr::Prop_SerialNumber_String, buf, sizeof(buf), &err)) {
-							t_symbol * id = gensym(buf);
+							id = gensym(buf);
 						}
 
 						steam_output_tracked_device(id, trackedDevicePose);
@@ -1884,6 +1885,7 @@ void ext_main(void* r) {
 	ps_head = gensym("head");
 	ps_left_hand = gensym("left_hand");
 	ps_right_hand = gensym("right_hand");
+	ps_generic = gensym("ps_generic");
 
 	ps_velocity = gensym("velocity");
 	ps_angular_velocity = gensym("angular_velocity");
