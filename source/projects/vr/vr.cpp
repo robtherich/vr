@@ -61,6 +61,7 @@ static t_symbol * ps_frustum;
 static t_symbol * ps_tracked_position;
 static t_symbol * ps_tracked_quat;
 
+static t_symbol * ps_tracking;
 static t_symbol * ps_head;
 static t_symbol * ps_left_hand;
 static t_symbol * ps_right_hand;
@@ -416,6 +417,56 @@ struct Vr {
 			
 	}
 	
+	void haptic(int hand, float intensity) {
+#ifdef USE_DRIVERS
+		if (driver == ps_steam) {
+			steam_haptic(hand, intensity);
+		}
+		else {
+			oculus_haptic(hand, intensity);
+		}
+#endif
+	}
+
+	void battery() {
+#ifdef USE_DRIVERS
+		if (driver == ps_steam) {
+			steam_battery();
+		}
+		else {
+			// not in the SDK API apparently
+		}
+#endif
+	}
+
+	void boundary() {
+		t_atom a[2];
+#ifdef USE_DRIVERS
+		if (driver == ps_steam) {
+			if (!steam.hmd) return;
+
+			auto chap = vr::VRChaperone();
+
+			glm::vec2 dim;
+			if (chap && chap->GetPlayAreaSize(&dim.x, &dim.y)) {
+
+				atom_setfloat(a + 0, dim.x);
+				atom_setfloat(a + 1, dim.y);
+				outlet_anything(outlet_msg, gensym("boundary"), 2, a);
+			}
+		}
+		else {
+			if (!oculus.session) return;
+			ovrVector3f dim;
+			if (OVR_SUCCESS(ovr_GetBoundaryDimensions(oculus.session, ovrBoundary_PlayArea, &dim))) {
+				// width, height, & depth of play area in meters
+				atom_setfloat(a + 0, dim.x);
+				atom_setfloat(a + 1, dim.z);
+				outlet_anything(outlet_msg, gensym("boundary"), 2, a);
+			}
+		}
+#endif
+	}
 
 	void create_gpu_resources() {
 		if (!connected && !dest_ready) return; // we're not ready yet
@@ -466,7 +517,8 @@ struct Vr {
 	// this should be the *last* thing to happen before rendering the scene
 	// nothing time-consuming should happen between bang() and render
 	void bang() {
-		
+		t_atom a[5];
+
 		// get desired view matrix (from @position and @quat attrs)
 		object_attr_getfloat_array(this, _jit_sym_position, 3, &view_position.x);
 		object_attr_getfloat_array(this, _jit_sym_quat, 4, &view_quat.x);
@@ -489,8 +541,25 @@ struct Vr {
 			// perhaps, poll for availability?
 		}
 
+		// always output the tracking space (so we can attach a jit.gl.node if desired)
+		atom_setsym(a, ps_tracking);
+
+		glm::vec3 p = glm::vec3(view_mat[3]); // the translation component
+		atom_setsym(a, _jit_sym_position);
+		atom_setfloat(a + 1, p.x);
+		atom_setfloat(a + 2, p.y);
+		atom_setfloat(a + 3, p.z);
+		outlet_anything(outlet_tracking, ps_tracking, 4, a);
+
+		glm::quat q = glm::quat_cast(view_mat); // the orientation component
+		atom_setsym(a, _jit_sym_quat);
+		atom_setfloat(a + 1, q.x);
+		atom_setfloat(a + 2, q.y);
+		atom_setfloat(a + 3, q.z);
+		atom_setfloat(a + 4, q.w);
+		outlet_anything(outlet_tracking, ps_tracking, 5, a);
+
 		// always output camera poses here (so it works even if not currently tracking)
-		t_atom a[4];
 		for (int eye = 0; eye < 2; eye++) {
 			glm::mat4 world_mat = view_mat * eye_mat[eye];
 
@@ -894,6 +963,17 @@ struct Vr {
 		};
 
 		VR_DEBUG_POST("oculus configured");
+	}
+
+	// intensity in 0.f..1.f
+	void oculus_haptic(int hand, float intensity = 0.5f) {
+		if (!oculus.session) return;
+
+		// this is the super-simple vibration code
+		ovr_SetControllerVibration(oculus.session, hand ? ovrControllerType_RTouch : ovrControllerType_LTouch, 0.5f, intensity);
+
+		// TODO: implement fancier haptics using the buffered-mode from the oculus sdk docs
+		// Touch haptic runs at 320hz, could imagine sending audio signals... 
 	}
 
 	bool oculus_create_gpu_resources() {
@@ -1325,7 +1405,57 @@ struct Vr {
 		VR_DEBUG_POST("steam configured");
 	}
 
+	// call at maximum frequency of 5ms
+	void steam_haptic(unsigned int hand = 0, float intensity = 0.5f) {
+		if (!steam.hmd) return;
+		int index = steam.mHandControllerDeviceIndex[hand % 2];
+		float duration_ms = intensity * 5.f;// guesswork
+		if (index >= 0 && duration_ms > 0.f && duration_ms <= 5.f) {
+			steam.hmd->TriggerHapticPulse(index, 0, duration_ms * 1000);
+		}
+	}
 
+	void steam_battery() {
+		if (!steam.hmd) return;
+		// check each device slot:
+		t_atom a[2];
+		for (int i = 0; i < vr::k_unMaxTrackedDeviceCount; i++) {
+			const vr::TrackedDevicePose_t& trackedDevicePose = steam.pRenderPoseArray[i];
+			// if the device is actually connected:
+			if (trackedDevicePose.bDeviceIsConnected) {
+
+				switch (steam.hmd->GetTrackedDeviceClass(i)) {
+				case vr::TrackedDeviceClass_Controller: {
+					// check role to see if these are hands
+					vr::ETrackedControllerRole role = steam.hmd->GetControllerRoleForTrackedDeviceIndex(i);
+					switch (role) {
+					case vr::TrackedControllerRole_LeftHand:
+					case vr::TrackedControllerRole_RightHand: 
+						t_symbol * id = (role == vr::TrackedControllerRole_RightHand) ? ps_right_hand : ps_left_hand;
+						atom_setsym(a + 0, id);
+						atom_setfloat(a + 1, steam.hmd->GetFloatTrackedDeviceProperty(i, vr::Prop_DeviceBatteryPercentage_Float));
+						outlet_anything(outlet_msg, gensym("battery"), 2, a);
+
+					}
+				} break;
+				case vr::TrackedDeviceClass_GenericTracker:
+				{
+					t_symbol * id = ps_generic;
+					vr::ETrackedPropertyError err = vr::TrackedProp_Success;
+					char buf[vr::k_unMaxPropertyStringSize];
+					if (vr::VRSystem()->GetStringTrackedDeviceProperty(i, vr::Prop_SerialNumber_String, buf, sizeof(buf), &err)) {
+						id = gensym(buf);
+					}
+					atom_setsym(a + 0, id);
+					atom_setfloat(a + 1, steam.hmd->GetFloatTrackedDeviceProperty(i, vr::Prop_DeviceBatteryPercentage_Float));
+					outlet_anything(outlet_msg, gensym("battery"), 2, a);
+				} break;
+				default:
+					break;
+				}
+			}
+		}
+	}
 
 	// TODO
 	bool steam_create_gpu_resources() {
@@ -1755,6 +1885,10 @@ void vr_dest_changed(Vr * x) { x->dest_changed(); }
 void vr_dest_closing(Vr * x) { x->dest_closing(); }
 void vr_draw(Vr * x) {} // not used
 
+void vr_haptic(Vr * x, t_atom_long hand, t_atom_float intensity) { x->haptic(hand, intensity); }
+
+void vr_battery(Vr * x) { x->battery(); }
+void vr_boundary(Vr * x) { x->boundary(); }
 
 t_max_err vr_connected_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	t_atom_long l = atom_getlong(argv);
@@ -1882,6 +2016,7 @@ void ext_main(void* r) {
 	ps_tracked_position = gensym("tracked_position");
 	ps_tracked_quat = gensym("tracked_quat");
 
+	ps_tracking = gensym("tracking");
 	ps_head = gensym("head");
 	ps_left_hand = gensym("left_hand");
 	ps_right_hand = gensym("right_hand");
@@ -1932,6 +2067,11 @@ void ext_main(void* r) {
 	class_addmethod(this_class, (method)vr_bang, "bang", 0);
  	class_addmethod(this_class, (method)vr_jit_gl_texture, "jit_gl_texture", A_GIMME, 0);
 
+
+	class_addmethod(this_class, (method)vr_boundary, "boundary", 0);
+	class_addmethod(this_class, (method)vr_battery, "battery", 0);
+	class_addmethod(this_class, (method)vr_haptic, "vibrate", A_LONG, A_FLOAT, 0);
+
 	// oculus only?
 
 	//class_addmethod(c, (method)oculusrift_perf, "perf", 0);
@@ -1950,9 +2090,6 @@ void ext_main(void* r) {
 	//CLASS_ATTR_LONG(c, "tracking_level", 0, oculusrift, tracking_level);
 	//CLASS_ATTR_ACCESSORS(c, "tracking_level", NULL, oculusrift_tracking_level_set);
 	
-	// steam-specific:
-	//class_addmethod(this_class, (method)vr_vibrate, "vibrate", A_GIMME, 0);
-	//class_addmethod(this_class, (method)vr_battery, "battery", A_GIMME, 0);
 	
 	CLASS_ATTR_FLOAT(this_class, "near_clip", 0, Vr, near_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);

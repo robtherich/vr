@@ -49,11 +49,9 @@ Integrating with spatial audio
 
 ## Eng
 
-- chaperone data
+- detailed chaperone data (not just boundary)
 - rendermodels
 - mirror texture outputs
-- Battery status
-- Controller vibration
 - Front-camera (VIVE)
 
 - Other headsets/drivers, e.g. OSVR

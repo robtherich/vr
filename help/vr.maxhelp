@@ -5,12 +5,12 @@
 			"major" : 7,
 			"minor" : 3,
 			"revision" : 4,
-			"architecture" : "x64",
+			"architecture" : "x86",
 			"modernui" : 1
 		}
 ,
-		"rect" : [ 651.0, 148.0, 749.0, 505.0 ],
-		"bglocked" : 0,
+		"rect" : [ 199.0, 413.0, 749.0, 505.0 ],
+		"bglocked" : 1,
 		"openinpresentation" : 0,
 		"default_fontsize" : 12.0,
 		"default_fontface" : 0,
@@ -38,6 +38,182 @@
 		"subpatcher_template" : "",
 		"boxes" : [ 			{
 				"box" : 				{
+					"id" : "obj-20",
+					"maxclass" : "newobj",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patcher" : 					{
+						"fileversion" : 1,
+						"appversion" : 						{
+							"major" : 7,
+							"minor" : 3,
+							"revision" : 4,
+							"architecture" : "x86",
+							"modernui" : 1
+						}
+,
+						"rect" : [ 729.0, 391.0, 601.0, 275.0 ],
+						"bglocked" : 0,
+						"openinpresentation" : 0,
+						"default_fontsize" : 12.0,
+						"default_fontface" : 0,
+						"default_fontname" : "Arial",
+						"gridonopen" : 1,
+						"gridsize" : [ 15.0, 15.0 ],
+						"gridsnaponopen" : 1,
+						"objectsnaponopen" : 1,
+						"statusbarvisible" : 2,
+						"toolbarvisible" : 1,
+						"lefttoolbarpinned" : 0,
+						"toptoolbarpinned" : 0,
+						"righttoolbarpinned" : 0,
+						"bottomtoolbarpinned" : 0,
+						"toolbars_unpinned_last_save" : 0,
+						"tallnewobj" : 0,
+						"boxanimatetime" : 200,
+						"enablehscroll" : 1,
+						"enablevscroll" : 1,
+						"devicewidth" : 0.0,
+						"description" : "",
+						"digest" : "",
+						"tags" : "",
+						"style" : "",
+						"subpatcher_template" : "",
+						"boxes" : [ 							{
+								"box" : 								{
+									"id" : "obj-6",
+									"maxclass" : "newobj",
+									"numinlets" : 1,
+									"numoutlets" : 1,
+									"outlettype" : [ "" ],
+									"patching_rect" : [ 146.0, 136.0, 88.0, 22.0 ],
+									"style" : "",
+									"text" : "vexpr $f1 * 0.5"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-5",
+									"maxclass" : "message",
+									"numinlets" : 2,
+									"numoutlets" : 1,
+									"outlettype" : [ "" ],
+									"patching_rect" : [ 146.0, 170.0, 138.0, 22.0 ],
+									"style" : "",
+									"text" : "scale $1 0. $2, enable 1"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-2",
+									"maxclass" : "newobj",
+									"numinlets" : 1,
+									"numoutlets" : 2,
+									"outlettype" : [ "jit_matrix", "" ],
+									"patching_rect" : [ 146.0, 206.0, 421.0, 22.0 ],
+									"style" : "",
+									"text" : "jit.gl.plato tracking @shape cube @poly_mode 1 1 @color 0 0.5 1 @enable 0"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-1",
+									"maxclass" : "newobj",
+									"numinlets" : 2,
+									"numoutlets" : 2,
+									"outlettype" : [ "", "" ],
+									"patching_rect" : [ 146.0, 100.0, 91.0, 22.0 ],
+									"style" : "",
+									"text" : "route boundary"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-12",
+									"maxclass" : "newobj",
+									"numinlets" : 1,
+									"numoutlets" : 0,
+									"patching_rect" : [ 50.0, 100.0, 71.0, 22.0 ],
+									"style" : "",
+									"text" : "print vr-info"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"comment" : "",
+									"id" : "obj-16",
+									"index" : 1,
+									"maxclass" : "inlet",
+									"numinlets" : 0,
+									"numoutlets" : 1,
+									"outlettype" : [ "" ],
+									"patching_rect" : [ 50.0, 40.0, 30.0, 30.0 ],
+									"style" : ""
+								}
+
+							}
+ ],
+						"lines" : [ 							{
+								"patchline" : 								{
+									"destination" : [ "obj-6", 0 ],
+									"source" : [ "obj-1", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-1", 0 ],
+									"order" : 0,
+									"source" : [ "obj-16", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-12", 0 ],
+									"order" : 1,
+									"source" : [ "obj-16", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-2", 0 ],
+									"source" : [ "obj-5", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-5", 0 ],
+									"source" : [ "obj-6", 0 ]
+								}
+
+							}
+ ]
+					}
+,
+					"patching_rect" : [ 339.000031, 294.0, 40.0, 22.0 ],
+					"saved_object_attributes" : 					{
+						"description" : "",
+						"digest" : "",
+						"globalpatchername" : "",
+						"style" : "",
+						"tags" : ""
+					}
+,
+					"style" : "",
+					"text" : "p info"
+				}
+
+			}
+, 			{
+				"box" : 				{
 					"id" : "obj-21",
 					"maxclass" : "newobj",
 					"numinlets" : 0,
@@ -57,7 +233,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 495.0, 45.0, 165.0, 47.0 ],
+					"patching_rect" : [ 495.0, 45.0, 165.0, 48.0 ],
 					"style" : "",
 					"text" : "Place items in the world by attaching to the \"world\" drawto context:"
 				}
@@ -126,7 +302,7 @@
 							"major" : 7,
 							"minor" : 3,
 							"revision" : 4,
-							"architecture" : "x64",
+							"architecture" : "x86",
 							"modernui" : 1
 						}
 ,
@@ -348,7 +524,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 15.0, 15.0, 59.0, 33.0 ],
+					"patching_rect" : [ 15.0, 15.0, 59.0, 34.0 ],
 					"style" : "",
 					"text" : "VR"
 				}
@@ -366,11 +542,11 @@
 							"major" : 7,
 							"minor" : 3,
 							"revision" : 4,
-							"architecture" : "x64",
+							"architecture" : "x86",
 							"modernui" : 1
 						}
 ,
-						"rect" : [ 293.0, 128.0, 1113.0, 469.0 ],
+						"rect" : [ 293.0, 128.0, 1189.0, 575.0 ],
 						"bglocked" : 0,
 						"openinpresentation" : 0,
 						"default_fontsize" : 12.0,
@@ -397,17 +573,57 @@
 						"tags" : "",
 						"style" : "",
 						"subpatcher_template" : "",
-						"visible" : 1,
 						"boxes" : [ 							{
 								"box" : 								{
-									"id" : "obj-9",
-									"linecount" : 2,
+									"id" : "obj-26",
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 831.0, 405.0, 232.0, 33.0 ],
+									"patching_rect" : [ 224.75, 492.0, 264.0, 20.0 ],
+									"presentation_rect" : [ 225.0, 491.0, 0.0, 0.0 ],
 									"style" : "",
-									"text" : "Thanks to Mathieu Chamagne for adding support for additional trackers!"
+									"text" : "a sub node for placing objects in tracking space"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-25",
+									"maxclass" : "newobj",
+									"numinlets" : 1,
+									"numoutlets" : 3,
+									"outlettype" : [ "jit_gl_texture", "", "" ],
+									"patching_rect" : [ 25.0, 492.0, 185.0, 22.0 ],
+									"style" : "",
+									"text" : "jit.gl.node world @name tracking"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-24",
+									"maxclass" : "newobj",
+									"numinlets" : 3,
+									"numoutlets" : 3,
+									"outlettype" : [ "", "", "" ],
+									"patching_rect" : [ 25.0, 453.0, 135.0, 22.0 ],
+									"presentation_rect" : [ 27.75, 448.0, 0.0, 0.0 ],
+									"style" : "",
+									"text" : "routepass position quat"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"id" : "obj-23",
+									"linecount" : 3,
+									"maxclass" : "comment",
+									"numinlets" : 1,
+									"numoutlets" : 0,
+									"patching_rect" : [ 263.25, 27.0, 262.0, 48.0 ],
+									"presentation_rect" : [ 256.25, 58.0, 0.0, 0.0 ],
+									"style" : "",
+									"text" : "tracking for additional controllers here (thanks to Mathieu Chamagne for adding support for additional trackers!)"
 								}
 
 							}
@@ -431,7 +647,7 @@
 									"numinlets" : 3,
 									"numoutlets" : 3,
 									"outlettype" : [ "", "", "" ],
-									"patching_rect" : [ 24.0, 405.0, 135.0, 22.0 ],
+									"patching_rect" : [ 75.75, 375.0, 135.0, 22.0 ],
 									"style" : "",
 									"text" : "routepass position quat"
 								}
@@ -443,7 +659,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 661.5, 146.0, 276.0, 20.0 ],
+									"patching_rect" : [ 713.25, 116.0, 276.0, 20.0 ],
 									"style" : "",
 									"text" : "tracking information for the right-hand controller"
 								}
@@ -455,7 +671,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 110.5, 146.0, 255.0, 20.0 ],
+									"patching_rect" : [ 162.25, 116.0, 255.0, 20.0 ],
 									"style" : "",
 									"text" : "tracking information for the left-hand controller"
 								}
@@ -467,7 +683,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 38.0, 375.0, 189.0, 20.0 ],
+									"patching_rect" : [ 89.75, 345.0, 189.0, 20.0 ],
 									"style" : "",
 									"text" : "tracking information for the HMD"
 								}
@@ -480,7 +696,7 @@
 									"numinlets" : 3,
 									"numoutlets" : 3,
 									"outlettype" : [ "", "", "" ],
-									"patching_rect" : [ 173.0, 405.0, 201.0, 22.0 ],
+									"patching_rect" : [ 224.75, 375.0, 201.0, 22.0 ],
 									"style" : "",
 									"text" : "route tracked_position tracked_quat"
 								}
@@ -494,7 +710,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 632.0, 309.0, 431.0, 35.0 ],
+									"patching_rect" : [ 683.75, 279.0, 431.0, 36.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape capsule @rad_minor 0.2 @position 0 -0.04 0.03 @rotatexyz 30 0 0 @scale 0.015 0.02 0.03 @material controller_mat"
 								}
@@ -507,7 +723,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 3,
 									"outlettype" : [ "jit_gl_texture", "", "" ],
-									"patching_rect" : [ 632.0, 229.0, 94.0, 22.0 ],
+									"patching_rect" : [ 683.75, 199.0, 94.0, 22.0 ],
 									"style" : "",
 									"text" : "jit.gl.node world"
 								}
@@ -521,7 +737,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 689.0, 260.0, 360.0, 35.0 ],
+									"patching_rect" : [ 740.75, 230.0, 360.0, 36.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape torus @rad_minor 0.2 @position 0 -0.04 0. @scale 0.035 0.035 0.05 @axes 1 @material controller_mat"
 								}
@@ -534,7 +750,7 @@
 									"numinlets" : 3,
 									"numoutlets" : 3,
 									"outlettype" : [ "", "", "" ],
-									"patching_rect" : [ 632.0, 177.0, 135.0, 22.0 ],
+									"patching_rect" : [ 683.75, 147.0, 135.0, 22.0 ],
 									"style" : "",
 									"text" : "routepass position quat"
 								}
@@ -548,7 +764,7 @@
 									"numinlets" : 9,
 									"numoutlets" : 9,
 									"outlettype" : [ "", "", "", "", "", "", "", "", "" ],
-									"patching_rect" : [ 748.0, 215.0, 336.0, 35.0 ],
+									"patching_rect" : [ 799.75, 185.0, 336.0, 36.0 ],
 									"style" : "",
 									"text" : "route tracked_position tracked_quat velocity angular_velocity trigger hand_trigger thumbstick buttons"
 								}
@@ -575,7 +791,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 78.0, 302.0, 431.0, 35.0 ],
+									"patching_rect" : [ 127.5, 272.0, 431.0, 36.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape capsule @rad_minor 0.2 @position 0 -0.04 0.03 @rotatexyz 30 0 0 @scale 0.015 0.02 0.03 @material controller_mat"
 								}
@@ -588,7 +804,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 554.0, 15.0, 363.0, 47.0 ],
+									"patching_rect" : [ 762.0, 390.0, 363.0, 48.0 ],
 									"style" : "",
 									"text" : "position/quat are in world-space coordinates.\ntracked_position/tracked_quat are in tracking-space coordinates.\nvelocity is in world-space coordinates."
 								}
@@ -601,7 +817,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 3,
 									"outlettype" : [ "jit_gl_texture", "", "" ],
-									"patching_rect" : [ 78.0, 223.0, 94.0, 22.0 ],
+									"patching_rect" : [ 127.5, 193.0, 94.0, 22.0 ],
 									"style" : "",
 									"text" : "jit.gl.node world"
 								}
@@ -615,7 +831,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 135.0, 254.0, 360.0, 35.0 ],
+									"patching_rect" : [ 184.5, 224.0, 360.0, 36.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape torus @rad_minor 0.2 @position 0 -0.04 0. @scale 0.035 0.035 0.05 @axes 1 @material controller_mat"
 								}
@@ -628,7 +844,7 @@
 									"numinlets" : 3,
 									"numoutlets" : 3,
 									"outlettype" : [ "", "", "" ],
-									"patching_rect" : [ 78.0, 171.0, 135.0, 22.0 ],
+									"patching_rect" : [ 127.5, 141.0, 135.0, 22.0 ],
 									"style" : "",
 									"text" : "routepass position quat"
 								}
@@ -642,7 +858,7 @@
 									"numinlets" : 9,
 									"numoutlets" : 9,
 									"outlettype" : [ "", "", "", "", "", "", "", "", "" ],
-									"patching_rect" : [ 194.0, 209.0, 336.0, 35.0 ],
+									"patching_rect" : [ 243.5, 179.0, 336.0, 36.0 ],
 									"style" : "",
 									"text" : "route tracked_position tracked_quat velocity angular_velocity trigger hand_trigger thumbstick buttons"
 								}
@@ -652,12 +868,12 @@
 								"box" : 								{
 									"id" : "obj-3",
 									"maxclass" : "newobj",
-									"numinlets" : 4,
-									"numoutlets" : 4,
-									"outlettype" : [ "", "", "", "" ],
-									"patching_rect" : [ 24.0, 53.0, 181.0, 22.0 ],
+									"numinlets" : 5,
+									"numoutlets" : 5,
+									"outlettype" : [ "", "", "", "", "" ],
+									"patching_rect" : [ 24.0, 53.0, 226.0, 22.0 ],
 									"style" : "",
-									"text" : "route head left_hand right_hand"
+									"text" : "route tracking head left_hand right_hand"
 								}
 
 							}
@@ -717,23 +933,44 @@
 							}
 , 							{
 								"patchline" : 								{
-									"destination" : [ "obj-18", 0 ],
-									"midpoints" : [ 141.5, 92.0, 641.5, 92.0 ],
-									"source" : [ "obj-3", 2 ]
+									"destination" : [ "obj-25", 0 ],
+									"source" : [ "obj-24", 1 ]
 								}
 
 							}
 , 							{
 								"patchline" : 								{
-									"destination" : [ "obj-4", 0 ],
+									"destination" : [ "obj-25", 0 ],
+									"source" : [ "obj-24", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-18", 0 ],
+									"midpoints" : [ 188.75, 111.0, 693.25, 111.0 ],
+									"source" : [ "obj-3", 3 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-24", 0 ],
 									"source" : [ "obj-3", 0 ]
 								}
 
 							}
 , 							{
 								"patchline" : 								{
-									"destination" : [ "obj-8", 0 ],
+									"destination" : [ "obj-4", 0 ],
 									"source" : [ "obj-3", 1 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-8", 0 ],
+									"source" : [ "obj-3", 2 ]
 								}
 
 							}
@@ -791,25 +1028,13 @@
 			}
 , 			{
 				"box" : 				{
-					"id" : "obj-12",
-					"maxclass" : "newobj",
-					"numinlets" : 1,
-					"numoutlets" : 0,
-					"patching_rect" : [ 339.0, 294.0, 71.0, 22.0 ],
-					"style" : "",
-					"text" : "print vr-info"
-				}
-
-			}
-, 			{
-				"box" : 				{
 					"id" : "obj-7",
 					"linecount" : 2,
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_texture", "" ],
-					"patching_rect" : [ 181.500015, 310.0, 77.0, 35.0 ],
+					"patching_rect" : [ 181.500015, 310.0, 77.0, 36.0 ],
 					"style" : "",
 					"text" : "jit.gl.camera world"
 				}
@@ -823,7 +1048,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "jit_gl_texture", "" ],
-					"patching_rect" : [ 102.750008, 310.0, 77.0, 35.0 ],
+					"patching_rect" : [ 102.750008, 310.0, 77.0, 36.0 ],
 					"style" : "",
 					"text" : "jit.gl.camera world"
 				}
@@ -865,7 +1090,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 2,
 					"outlettype" : [ "", "" ],
-					"patching_rect" : [ 197.0, 157.0, 80.0, 35.0 ],
+					"patching_rect" : [ 197.0, 157.0, 80.0, 36.0 ],
 					"style" : ""
 				}
 
@@ -878,7 +1103,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "", "bang", "" ],
-					"patching_rect" : [ 24.0, 97.0, 321.0, 35.0 ],
+					"patching_rect" : [ 24.0, 97.0, 321.0, 36.0 ],
 					"style" : "",
 					"text" : "jit.world vr @fps 90 @enable 1 @sync 0 @size 800 400 @phys_worldname vr-phys"
 				}
@@ -892,7 +1117,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 5,
 					"outlettype" : [ "", "", "", "", "" ],
-					"patching_rect" : [ 24.0, 266.0, 334.000031, 22.0 ],
+					"patching_rect" : [ 24.0, 267.0, 334.000031, 22.0 ],
 					"style" : "",
 					"text" : "vr"
 				}
@@ -951,7 +1176,7 @@
 							"major" : 7,
 							"minor" : 3,
 							"revision" : 4,
-							"architecture" : "x64",
+							"architecture" : "x86",
 							"modernui" : 1
 						}
 ,
@@ -1051,7 +1276,7 @@
 							"major" : 7,
 							"minor" : 3,
 							"revision" : 4,
-							"architecture" : "x64",
+							"architecture" : "x86",
 							"modernui" : 1
 						}
 ,
@@ -1134,7 +1359,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -1421,11 +1646,11 @@
 							"major" : 7,
 							"minor" : 3,
 							"revision" : 4,
-							"architecture" : "x64",
+							"architecture" : "x86",
 							"modernui" : 1
 						}
 ,
-						"rect" : [ 387.0, 143.0, 654.0, 499.0 ],
+						"rect" : [ 809.0, 276.0, 654.0, 499.0 ],
 						"bglocked" : 0,
 						"openinpresentation" : 0,
 						"default_fontsize" : 12.0,
@@ -1491,7 +1716,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -1881,7 +2106,7 @@
 									"outlettype" : [ "jit_matrix", "" ],
 									"patching_rect" : [ 365.0, 416.0, 256.333344, 50.0 ],
 									"style" : "",
-									"text" : "jit.gl.mesh world @draw_mode points @blend_enable 1 @blend alphaadd @depth_write 0 @color 1 1 1 1 @point_size 4"
+									"text" : "jit.gl.mesh world @draw_mode points @blend_enable 1 @blend add @depth_write 0 @color 1 1 1 1 @point_size 4"
 								}
 
 							}
@@ -1911,7 +2136,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -2064,7 +2289,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -2286,7 +2511,7 @@
 															"major" : 7,
 															"minor" : 3,
 															"revision" : 4,
-															"architecture" : "x64",
+															"architecture" : "x86",
 															"modernui" : 1
 														}
 ,
@@ -2891,7 +3116,7 @@
 , 											{
 												"patchline" : 												{
 													"destination" : [ "obj-2", 2 ],
-													"midpoints" : [ 324.5, 247.0, 531.166656, 247.0 ],
+													"midpoints" : [ 324.5, 247.0, 531.166626, 247.0 ],
 													"order" : 0,
 													"source" : [ "obj-19", 0 ]
 												}
@@ -2914,7 +3139,7 @@
 , 											{
 												"patchline" : 												{
 													"destination" : [ "obj-6", 1 ],
-													"midpoints" : [ 607.5, 395.0, 305.833333, 395.0 ],
+													"midpoints" : [ 607.5, 395.0, 305.833344, 395.0 ],
 													"source" : [ "obj-21", 0 ]
 												}
 
@@ -3085,7 +3310,7 @@
 									"outlettype" : [ "jit_matrix", "" ],
 									"patching_rect" : [ 390.0, 224.0, 134.0, 22.0 ],
 									"style" : "",
-									"text" : "jit.noise 8 float32 32 32"
+									"text" : "jit.noise 8 float32 16 16"
 								}
 
 							}
@@ -3099,7 +3324,7 @@
 									"outlettype" : [ "jit_matrix", "" ],
 									"patching_rect" : [ 33.0, 416.0, 256.333344, 50.0 ],
 									"style" : "",
-									"text" : "jit.gl.mesh world @draw_mode points @blend_enable 1 @blend alphaadd @depth_write 0 @color 1 1 1 1 @point_size 4"
+									"text" : "jit.gl.mesh world @draw_mode points @blend_enable 1 @blend add @depth_write 0 @color 1 1 1 1 @point_size 4"
 								}
 
 							}
@@ -3116,7 +3341,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -3548,7 +3773,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -3701,7 +3926,7 @@
 											"major" : 7,
 											"minor" : 3,
 											"revision" : 4,
-											"architecture" : "x64",
+											"architecture" : "x86",
 											"modernui" : 1
 										}
 ,
@@ -3923,7 +4148,7 @@
 															"major" : 7,
 															"minor" : 3,
 															"revision" : 4,
-															"architecture" : "x64",
+															"architecture" : "x86",
 															"modernui" : 1
 														}
 ,
@@ -4528,7 +4753,7 @@
 , 											{
 												"patchline" : 												{
 													"destination" : [ "obj-2", 2 ],
-													"midpoints" : [ 324.5, 247.0, 531.166656, 247.0 ],
+													"midpoints" : [ 324.5, 247.0, 531.166626, 247.0 ],
 													"order" : 0,
 													"source" : [ "obj-19", 0 ]
 												}
@@ -4551,7 +4776,7 @@
 , 											{
 												"patchline" : 												{
 													"destination" : [ "obj-6", 1 ],
-													"midpoints" : [ 607.5, 395.0, 305.833333, 395.0 ],
+													"midpoints" : [ 607.5, 395.0, 305.833344, 395.0 ],
 													"source" : [ "obj-21", 0 ]
 												}
 
@@ -4722,7 +4947,20 @@
 									"outlettype" : [ "jit_matrix", "" ],
 									"patching_rect" : [ 58.0, 224.0, 134.0, 22.0 ],
 									"style" : "",
-									"text" : "jit.noise 8 float32 32 32"
+									"text" : "jit.noise 8 float32 16 16"
+								}
+
+							}
+, 							{
+								"box" : 								{
+									"attr" : "blend",
+									"id" : "obj-2",
+									"maxclass" : "attrui",
+									"numinlets" : 1,
+									"numoutlets" : 1,
+									"outlettype" : [ "" ],
+									"patching_rect" : [ 422.0, 53.0, 150.0, 22.0 ],
+									"style" : ""
 								}
 
 							}
@@ -4785,6 +5023,22 @@
 								"patchline" : 								{
 									"destination" : [ "obj-12", 0 ],
 									"source" : [ "obj-17", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-47", 0 ],
+									"order" : 1,
+									"source" : [ "obj-2", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-50", 0 ],
+									"order" : 0,
+									"source" : [ "obj-2", 0 ]
 								}
 
 							}
@@ -4933,15 +5187,15 @@
  ],
 		"lines" : [ 			{
 				"patchline" : 				{
-					"destination" : [ "obj-12", 0 ],
-					"source" : [ "obj-1", 4 ]
+					"destination" : [ "obj-15", 0 ],
+					"source" : [ "obj-1", 3 ]
 				}
 
 			}
 , 			{
 				"patchline" : 				{
-					"destination" : [ "obj-15", 0 ],
-					"source" : [ "obj-1", 3 ]
+					"destination" : [ "obj-20", 0 ],
+					"source" : [ "obj-1", 4 ]
 				}
 
 			}
@@ -5061,8 +5315,8 @@
 			}
  ],
 		"dependency_cache" : [ 			{
-				"name" : "vr.mxo",
-				"type" : "iLaX"
+				"name" : "vr.mxe",
+				"type" : "iLaF"
 			}
  ],
 		"autosave" : 0
