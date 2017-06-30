@@ -49,9 +49,8 @@ Integrating with spatial audio
 
 ## Eng
 
+- Front-camera (VIVE) -- can't test here, mine isn't working
 - detailed chaperone data (not just boundary)
-- rendermodels
 - mirror texture outputs
-- Front-camera (VIVE)
-
+- rendermodels
 - Other headsets/drivers, e.g. OSVR

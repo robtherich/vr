@@ -66,6 +66,7 @@ static t_symbol * ps_head;
 static t_symbol * ps_left_hand;
 static t_symbol * ps_right_hand;
 static t_symbol * ps_generic;
+static t_symbol * ps_camera;
 
 static t_symbol * ps_velocity;
 static t_symbol * ps_angular_velocity;
@@ -150,6 +151,7 @@ struct Vr {
 	t_symbol * driver;
 	t_atom_long connected = 0;
 	t_atom_long oculus_available = 0, steam_available = 0;
+	t_atom_long use_camera = 0;
 
 	glm::vec3 view_position;
 	glm::quat view_quat;
@@ -196,7 +198,6 @@ struct Vr {
 
 		vr::IVRRenderModels * mRenderModels = 0;
 
-		int use_camera = 0;
 		vr::IVRTrackedCamera * mCamera = 0;
 		vr::TrackedCameraHandle_t m_hTrackedCamera = INVALID_TRACKED_CAMERA_HANDLE;
 		uint32_t	m_nCameraFrameWidth;
@@ -205,6 +206,72 @@ struct Vr {
 		uint32_t	m_nLastFrameSequence = 0;
 		uint8_t		* m_pCameraFrameBuffer = 0;
 		vr::EVRTrackedCameraFrameType frametype = vr::VRTrackedCameraFrameType_Undistorted;
+		struct {
+			void * tex = 0;
+			t_symbol * sym;
+			t_atom_long dim[2];
+
+			void init() {
+				tex = 0;
+				sym = _jit_sym_nothing;
+				dim[0] = 640;
+				dim[1] = 480;
+			}
+
+			void destroy() { dest_closing(); }
+
+			void resize(t_atom_long w, t_atom_long h) {
+				if (dim[0] != w && dim[1] != h) {
+					dim[0] = w;
+					dim[1] = h;
+					if (tex) {
+						if (object_attr_setlong_array(tex, _jit_sym_dim, 2, dim)) object_error(nullptr, "failed to set texture dim");
+					}
+				}
+			}
+
+			bool dest_changed(t_symbol * context) {
+				if (tex) dest_closing();
+
+				// create a jit.gl.texture to copy mirror to
+				tex = jit_object_new(gensym("jit_gl_texture"), context);
+				if (!tex) return false;
+				// set texture attributes.
+				sym = object_attr_getsym(tex, gensym("name"));
+				if (object_attr_setlong_array(tex, _jit_sym_dim, 2, dim)) object_error(nullptr, "failed to set mirror dim");
+				if (object_attr_setlong(tex, gensym("rectangle"), 1)) object_error(nullptr, "failed to set mirror rectangle mode");
+				//jit_attr_setsym(tex, gensym("defaultimage"), gensym("black"));
+				//jit_attr_setlong(outtexture, gensym("flip"), 0);
+				return true;
+			}
+
+			bool dest_closing() {
+				if (tex) {
+					jit_object_free(tex);
+					tex = 0;
+				}
+				return true;
+			}
+
+			long glid() {
+				return object_attr_getlong(tex, gensym("glid"));
+			}
+
+			/*
+			bool bind(void * ob3d) {
+				t_jit_gl_drawinfo drawInfo;
+				if (jit_gl_drawinfo_setup(ob3d, &drawInfo)) return false;
+				jit_gl_bindtexture(&drawInfo, sym, 0);
+				return true;
+			}
+			bool unbind(void * ob3d) {
+				t_jit_gl_drawinfo drawInfo;
+				if (jit_gl_drawinfo_setup(ob3d, &drawInfo)) return false;
+				jit_gl_unbindtexture(&drawInfo, sym, 0);
+				return true;
+			}*/
+
+		} camtex;
 
 	} steam;
 	
@@ -236,6 +303,7 @@ struct Vr {
 
 			steam.mHandControllerDeviceIndex[eye] = -1;
 		}
+		steam.camtex.init();
 
 		update_availability();
 	}
@@ -1339,25 +1407,6 @@ struct Vr {
 			object_error(&ob, "Unable to init VR runtime: %s", vr::VR_GetVRInitErrorAsEnglishDescription(eError));
 		}*/
 
-		// TODO: move this out of connect() and into an attr setter? or only run if use_camera enabled?
-		if (steam.use_camera) {
-			steam.mCamera = vr::VRTrackedCamera(); // (vr::IVRTrackedCamera *)vr::VR_GetGenericInterface(vr::IVRTrackedCamera_Version, &eError);
-			if (!steam.mCamera) {
-				object_post(&ob, "failed to acquire camera -- is it enabled in the SteamVR settings?");
-			}
-			else {
-				vr::EVRTrackedCameraError camError;
-				bool bHasCamera = false;
-
-				camError = steam.mCamera->HasCamera(vr::k_unTrackedDeviceIndex_Hmd, &bHasCamera);
-				if (camError != vr::VRTrackedCameraError_None || !bHasCamera) {
-					object_post(&ob, "No Tracked Camera Available! (%s)\n", steam.mCamera->GetCameraErrorNameFromEnum(camError));
-					steam.mCamera = 0;
-				}
-
-				//if (use_camera) video_start();
-			}
-		}
 		VR_DEBUG_POST("steam connected");
 
 		driver = ps_steam;
@@ -1368,11 +1417,11 @@ struct Vr {
 		if (steam.hmd) {
 			VR_DEBUG_POST("steam disconnect");
 
+
+			steam_video_stop();
+
 			release_gpu_resources();
 
-			// TODO enable video
-			//video_stop();
-			
 			//vr::VR_Shutdown();
 
 			steam.hmd = 0;
@@ -1491,7 +1540,8 @@ struct Vr {
 
 
 		// TODO mirror
-		// TODO video camera
+		
+		if (steam.mCamera) steam_video_create_gpu_resources();
 
 		//jit_gl_report_error("steam_create_gpu_resources done");
 
@@ -1499,7 +1549,6 @@ struct Vr {
 	}
 
 	void steam_release_gpu_resources() {
-		// TODO
 		if (steam.fbo_texture_id) {
 			glDeleteTextures(1, &steam.fbo_texture_id);
 			steam.fbo_texture_id = 0;
@@ -1509,6 +1558,8 @@ struct Vr {
 			glDeleteRenderbuffersEXT(1, &rbo_id);
 			rbo_id = 0;
 		}
+
+		steam.camtex.dest_closing();
 	}
 
 	void steam_bang() {
@@ -1541,6 +1592,9 @@ struct Vr {
 				}
 			}
 		}
+
+		// video:
+		steam_video_step();
 
 		for (int i = 0; i < 2; i++) {
 
@@ -1855,6 +1909,145 @@ struct Vr {
 		return true;
 	}
 
+	bool steam_video_restart() {
+		if (!steam.hmd) return false; 
+		steam_video_stop();
+
+		// create camera if we need it:
+		if (!steam.mCamera) {
+			steam.mCamera = vr::VRTrackedCamera(); // (vr::IVRTrackedCamera *)vr::VR_GetGenericInterface(vr::IVRTrackedCamera_Version, &eError);
+			if (!steam.mCamera) {
+				object_error(&ob, "failed to acquire camera -- is it enabled in the SteamVR settings?");
+				return false;
+			}
+			else {
+				vr::EVRTrackedCameraError camError;
+				bool bHasCamera = false;
+
+				camError = steam.mCamera->HasCamera(vr::k_unTrackedDeviceIndex_Hmd, &bHasCamera);
+				if (camError != vr::VRTrackedCameraError_None || !bHasCamera) {
+					object_error(&ob, "No Tracked Camera Available! (%s)\n", steam.mCamera->GetCameraErrorNameFromEnum(camError));
+					steam.mCamera = 0;
+					return false;
+				}
+			}
+		}
+
+
+		uint32_t nCameraFrameBufferSize = 0;
+		vr::EVRTrackedCameraError err;
+		if (steam.mCamera->GetCameraFrameSize(vr::k_unTrackedDeviceIndex_Hmd, steam.frametype, &steam.m_nCameraFrameWidth, &steam.m_nCameraFrameHeight, &nCameraFrameBufferSize) != vr::VRTrackedCameraError_None)
+		{
+			object_error(&ob, "GetCameraFrameBounds() Failed!\n");
+			steam.mCamera = 0;
+			return false;
+		}
+
+		uint32_t planes = nCameraFrameBufferSize / (steam.m_nCameraFrameWidth * steam.m_nCameraFrameHeight);
+		VR_DEBUG_POST(&ob, "video %i x %i, %i-plane", steam.m_nCameraFrameWidth, steam.m_nCameraFrameHeight, planes);
+
+		if (dest_ready) steam_video_create_gpu_resources();
+
+		steam.camtex.resize(steam.m_nCameraFrameWidth, steam.m_nCameraFrameHeight);
+
+		if (nCameraFrameBufferSize != steam.m_nCameraFrameBufferSize) {
+			delete[] steam.m_pCameraFrameBuffer;
+			steam.m_nCameraFrameBufferSize = nCameraFrameBufferSize;
+			steam.m_pCameraFrameBuffer = new uint8_t[steam.m_nCameraFrameBufferSize];
+			memset(steam.m_pCameraFrameBuffer, 0, steam.m_nCameraFrameBufferSize);
+		}
+
+		err = steam.mCamera->AcquireVideoStreamingService(vr::k_unTrackedDeviceIndex_Hmd, &steam.m_hTrackedCamera);
+		if (steam.m_hTrackedCamera == INVALID_TRACKED_CAMERA_HANDLE)
+		{
+			object_error(&ob, "AcquireVideoStreamingService() Failed! %s", steam.mCamera->GetCameraErrorNameFromEnum(err));
+			return false;
+		}
+
+		/*
+
+		// doesn't seem to be giving good numbers yet...
+
+		t_atom a[4];
+		vr::HmdVector2_t focalLength, center;
+		err = mCamera->GetCameraIntrinisics(m_hTrackedCamera, frametype, &focalLength, &center);
+		vr::HmdMatrix44_t projection;
+		err = mCamera->GetCameraProjection(m_hTrackedCamera, frametype, near_clip, far_clip, &projection);
+		atom_setfloat(&a[0], (double)focalLength.v[0]);
+		atom_setfloat(&a[1], (double)focalLength.v[1]);
+		atom_setfloat(&a[2], (double)center.v[0]);
+		atom_setfloat(&a[3], (double)center.v[1]);
+		outlet_anything(outlet_msg, gensym("video_focal_center"), 4, a);
+
+		t_atom b[16];
+		// convert matrix?
+		glm::mat4 proj = mat4_from_openvr(projection);
+		// so, what do we really want to do with this information?
+		float * fp = glm::value_ptr(proj);
+		for (int i = 0; i < 16; i++) atom_setfloat(&b[i], (double)fp[i]);
+		outlet_anything(outlet_msg, gensym("video_projection"), 16, b);
+		*/
+
+		return true;
+	}
+
+	bool steam_video_create_gpu_resources() {
+		t_symbol *drawto = object_attr_getsym(this, gensym("drawto"));
+		if (!steam.camtex.dest_changed(drawto)) {
+			object_error(&ob, "failed to create camera texture");
+			return false;
+		}
+		return true;
+	}
+
+	void steam_video_stop() {
+		if (!steam.hmd) return;
+		if (steam.mCamera && steam.m_hTrackedCamera) {
+			steam.mCamera->ReleaseVideoStreamingService(steam.m_hTrackedCamera);
+			steam.m_hTrackedCamera = INVALID_TRACKED_CAMERA_HANDLE;
+			use_camera = 0;
+			VR_DEBUG_POST(&ob, "video stopped");
+		}
+	}
+
+	void steam_video_step() {
+		if (!steam.hmd || !use_camera || !steam.mCamera || !steam.m_hTrackedCamera) return;
+
+
+		VR_DEBUG_POST(&ob, "video step");
+
+		// get the frame header only
+		vr::CameraVideoStreamFrameHeader_t frameHeader;
+		vr::EVRTrackedCameraError nCameraError = steam.mCamera->GetVideoStreamFrameBuffer(steam.m_hTrackedCamera, steam.frametype, nullptr, 0, &frameHeader, sizeof(frameHeader));
+		if (nCameraError != vr::VRTrackedCameraError_None) { object_error(&ob, "no video %s", steam.mCamera->GetCameraErrorNameFromEnum(nCameraError)); return; }
+
+		// only continue if this is a new frame
+		if (frameHeader.nFrameSequence == steam.m_nLastFrameSequence) return;
+		steam.m_nLastFrameSequence = frameHeader.nFrameSequence;
+
+		// copy frame
+		nCameraError = steam.mCamera->GetVideoStreamFrameBuffer(steam.m_hTrackedCamera, steam.frametype, steam.m_pCameraFrameBuffer, steam.m_nCameraFrameBufferSize, &frameHeader, sizeof(frameHeader));
+		if (nCameraError != vr::VRTrackedCameraError_None) return;
+
+		// would be nice to copy this as a texture on the GPU but apparently this isn't supported yet (the API exists, but returns error NotSupportedForThisDevice)
+		// so instead here's uploading to a jit.gl.texture from our CPU copy:
+		if (steam.camtex.tex) {
+			// update texture:
+			glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
+			glEnable(GL_TEXTURE_RECTANGLE_ARB);
+			glActiveTextureARB(GL_TEXTURE0);
+			glBindTexture(GL_TEXTURE_RECTANGLE_ARB, steam.camtex.glid());
+			glTexSubImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, 0, 0, steam.camtex.dim[0], steam.camtex.dim[1], GL_RGBA, GL_UNSIGNED_BYTE, steam.m_pCameraFrameBuffer);
+			glPopAttrib();
+
+			// and output:
+			t_atom a[2];
+			atom_setsym(&a[0], ps_jit_gl_texture);
+			atom_setsym(&a[0], steam.camtex.sym);
+			outlet_anything(outlet_msg, ps_camera, 2, a);
+		}
+	}
+
 
 #endif // ifdef USE_DRIVERS
 };
@@ -1889,6 +2082,23 @@ void vr_haptic(Vr * x, t_atom_long hand, t_atom_float intensity) { x->haptic(han
 
 void vr_battery(Vr * x) { x->battery(); }
 void vr_boundary(Vr * x) { x->boundary(); }
+
+t_max_err vr_use_camera_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
+	x->use_camera = atom_getlong(argv);
+
+	if (x->use_camera > 0) {
+		switch (x->use_camera) {
+		case 1: x->steam.frametype = vr::VRTrackedCameraFrameType_Undistorted; break;
+		case 2: x->steam.frametype = vr::VRTrackedCameraFrameType_Distorted; break;
+		default: x->steam.frametype = vr::VRTrackedCameraFrameType_MaximumUndistorted; break;
+		}
+		x->steam_video_restart();
+	}
+	else {
+		x->steam_video_stop();
+	}
+	return 0;
+}
 
 t_max_err vr_connected_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	t_atom_long l = atom_getlong(argv);
@@ -2020,8 +2230,8 @@ void ext_main(void* r) {
 	ps_head = gensym("head");
 	ps_left_hand = gensym("left_hand");
 	ps_right_hand = gensym("right_hand");
-	ps_generic = gensym("ps_generic");
-
+	ps_generic = gensym("generic");
+	ps_camera = gensym("camera");
 	ps_velocity = gensym("velocity");
 	ps_angular_velocity = gensym("angular_velocity");
 	ps_trigger = gensym("trigger");
@@ -2072,6 +2282,11 @@ void ext_main(void* r) {
 	class_addmethod(this_class, (method)vr_battery, "battery", 0);
 	class_addmethod(this_class, (method)vr_haptic, "vibrate", A_LONG, A_FLOAT, 0);
 
+	// vive only
+	CLASS_ATTR_LONG(this_class, "use_camera", 0, Vr, use_camera);
+	CLASS_ATTR_ENUMINDEX4(this_class, "use_camera", 0, "no video", "distorted", "undistorted", "undistorted_maximized");
+	CLASS_ATTR_ACCESSORS(this_class, "use_camera", NULL, vr_use_camera_set);
+
 	// oculus only?
 
 	//class_addmethod(c, (method)oculusrift_perf, "perf", 0);
@@ -2113,6 +2328,7 @@ void ext_main(void* r) {
 	CLASS_ATTR_ACCESSORS(this_class, "driver", NULL, vr_driver_set);
 	CLASS_ATTR_LONG(this_class, "preferred_driver_only", 0, Vr, preferred_driver_only);
 	CLASS_ATTR_STYLE(this_class, "preferred_driver_only", 0, "onoff");
+
 
 	
 	class_register(CLASS_BOX, this_class);
