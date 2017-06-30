@@ -2085,7 +2085,7 @@ void vr_boundary(Vr * x) { x->boundary(); }
 
 t_max_err vr_use_camera_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	x->use_camera = atom_getlong(argv);
-
+	#ifdef USE_DRIVERS
 	if (x->use_camera > 0) {
 		switch (x->use_camera) {
 		case 1: x->steam.frametype = vr::VRTrackedCameraFrameType_Undistorted; break;
@@ -2097,6 +2097,7 @@ t_max_err vr_use_camera_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	else {
 		x->steam_video_stop();
 	}
+	#endif
 	return 0;
 }
 
