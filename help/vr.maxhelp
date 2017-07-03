@@ -44,8 +44,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 414.291656, 389.0, 130.0, 87.0 ],
-					"presentation_rect" : [ 419.291656, 446.0, 0.0, 0.0 ],
+					"patching_rect" : [ 414.291656, 389.0, 134.0, 87.0 ],
 					"style" : "",
 					"text" : "After sending the captured scene texture to the vr object (which puts it on the HMD, display it on the desktop window"
 				}
@@ -73,8 +72,7 @@
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 414.291656, 97.0, 130.0, 87.0 ],
-					"presentation_rect" : [ 422.291656, 100.0, 0.0, 0.0 ],
+					"patching_rect" : [ 414.291656, 97.0, 131.0, 87.0 ],
 					"style" : "",
 					"text" : "@sync 0 so that the main display doesn't interfere with the HMD refresh rate, which should be 90fps to prevent nausea."
 				}
@@ -89,7 +87,6 @@
 					"numinlets" : 1,
 					"numoutlets" : 0,
 					"patching_rect" : [ 238.0, 190.0, 150.0, 33.0 ],
-					"presentation_rect" : [ 242.0, 192.0, 0.0, 0.0 ],
 					"style" : "",
 					"text" : "90fps for Oculus Rift/HTC Vive to prevent nausea"
 				}
@@ -139,6 +136,18 @@
 						"style" : "",
 						"subpatcher_template" : "",
 						"boxes" : [ 							{
+								"box" : 								{
+									"id" : "obj-3",
+									"maxclass" : "newobj",
+									"numinlets" : 1,
+									"numoutlets" : 0,
+									"patching_rect" : [ 262.0, 100.0, 76.0, 22.0 ],
+									"style" : "",
+									"text" : "send /vr/info"
+								}
+
+							}
+, 							{
 								"box" : 								{
 									"id" : "obj-6",
 									"maxclass" : "newobj",
@@ -227,7 +236,8 @@
 , 							{
 								"patchline" : 								{
 									"destination" : [ "obj-1", 0 ],
-									"order" : 0,
+									"midpoints" : [ 59.5, 84.5, 155.5, 84.5 ],
+									"order" : 1,
 									"source" : [ "obj-16", 0 ]
 								}
 
@@ -235,7 +245,16 @@
 , 							{
 								"patchline" : 								{
 									"destination" : [ "obj-12", 0 ],
-									"order" : 1,
+									"order" : 2,
+									"source" : [ "obj-16", 0 ]
+								}
+
+							}
+, 							{
+								"patchline" : 								{
+									"destination" : [ "obj-3", 0 ],
+									"midpoints" : [ 59.5, 84.0, 271.5, 84.0 ],
+									"order" : 0,
 									"source" : [ "obj-16", 0 ]
 								}
 
@@ -278,9 +297,9 @@
 					"numinlets" : 0,
 					"numoutlets" : 1,
 					"outlettype" : [ "" ],
-					"patching_rect" : [ 42.583328, 248.375, 42.0, 22.0 ],
+					"patching_rect" : [ 42.583328, 248.375, 31.0, 22.0 ],
 					"style" : "",
-					"text" : "r to-vr"
+					"text" : "r /vr"
 				}
 
 			}
@@ -315,13 +334,12 @@
 , 			{
 				"box" : 				{
 					"id" : "obj-29",
-					"linecount" : 2,
 					"maxclass" : "newobj",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 42.583328, 190.0, 112.416672, 35.0 ],
+					"patching_rect" : [ 42.583328, 190.0, 93.0, 22.0 ],
 					"style" : "",
-					"text" : "send vr-pre-render-bang"
+					"text" : "send /vr/update"
 				}
 
 			}
@@ -596,7 +614,7 @@
 							"modernui" : 1
 						}
 ,
-						"rect" : [ 293.0, 128.0, 1189.0, 575.0 ],
+						"rect" : [ 217.0, 128.0, 1189.0, 575.0 ],
 						"bglocked" : 0,
 						"openinpresentation" : 0,
 						"default_fontsize" : 12.0,
@@ -643,9 +661,9 @@
 									"maxclass" : "newobj",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 43.25, 51.0, 123.0, 22.0 ],
+									"patching_rect" : [ 43.25, 51.0, 99.0, 22.0 ],
 									"style" : "",
-									"text" : "send vr-tracking-data"
+									"text" : "send /vr/tracking"
 								}
 
 							}
@@ -694,7 +712,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 262.25, 60.0, 262.0, 48.0 ],
+									"patching_rect" : [ 262.25, 60.0, 262.0, 47.0 ],
 									"style" : "",
 									"text" : "tracking for additional controllers here (thanks to Mathieu Chamagne for adding support for additional trackers!)"
 								}
@@ -770,7 +788,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 682.75, 312.0, 431.0, 36.0 ],
+									"patching_rect" : [ 682.75, 312.0, 431.0, 35.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape capsule @rad_minor 0.2 @position 0 -0.04 0.03 @rotatexyz 30 0 0 @scale 0.015 0.02 0.03 @material controller_mat"
 								}
@@ -797,7 +815,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 739.75, 263.0, 360.0, 36.0 ],
+									"patching_rect" : [ 739.75, 263.0, 360.0, 35.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape torus @rad_minor 0.2 @position 0 -0.04 0. @scale 0.035 0.035 0.05 @axes 1 @material controller_mat"
 								}
@@ -824,7 +842,7 @@
 									"numinlets" : 9,
 									"numoutlets" : 9,
 									"outlettype" : [ "", "", "", "", "", "", "", "", "" ],
-									"patching_rect" : [ 798.75, 218.0, 336.0, 36.0 ],
+									"patching_rect" : [ 798.75, 218.0, 336.0, 35.0 ],
 									"style" : "",
 									"text" : "route tracked_position tracked_quat velocity angular_velocity trigger hand_trigger thumbstick buttons"
 								}
@@ -851,7 +869,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 126.5, 305.0, 431.0, 36.0 ],
+									"patching_rect" : [ 126.5, 305.0, 431.0, 35.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape capsule @rad_minor 0.2 @position 0 -0.04 0.03 @rotatexyz 30 0 0 @scale 0.015 0.02 0.03 @material controller_mat"
 								}
@@ -864,7 +882,7 @@
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 761.0, 423.0, 363.0, 48.0 ],
+									"patching_rect" : [ 761.0, 423.0, 363.0, 47.0 ],
 									"style" : "",
 									"text" : "position/quat are in world-space coordinates.\ntracked_position/tracked_quat are in tracking-space coordinates.\nvelocity is in world-space coordinates."
 								}
@@ -891,7 +909,7 @@
 									"numinlets" : 1,
 									"numoutlets" : 2,
 									"outlettype" : [ "jit_matrix", "" ],
-									"patching_rect" : [ 183.5, 257.0, 360.0, 36.0 ],
+									"patching_rect" : [ 183.5, 257.0, 360.0, 35.0 ],
 									"style" : "",
 									"text" : "jit.gl.gridshape @shape torus @rad_minor 0.2 @position 0 -0.04 0. @scale 0.035 0.035 0.05 @axes 1 @material controller_mat"
 								}
@@ -918,7 +936,7 @@
 									"numinlets" : 9,
 									"numoutlets" : 9,
 									"outlettype" : [ "", "", "", "", "", "", "", "", "" ],
-									"patching_rect" : [ 242.5, 212.0, 336.0, 36.0 ],
+									"patching_rect" : [ 242.5, 212.0, 336.0, 35.0 ],
 									"style" : "",
 									"text" : "route tracked_position tracked_quat velocity angular_velocity trigger hand_trigger thumbstick buttons"
 								}
@@ -1740,9 +1758,9 @@
 									"numinlets" : 0,
 									"numoutlets" : 1,
 									"outlettype" : [ "" ],
-									"patching_rect" : [ 365.0, 148.0, 119.0, 22.0 ],
+									"patching_rect" : [ 365.0, 148.0, 71.0, 22.0 ],
 									"style" : "",
-									"text" : "r vr-pre-render-bang"
+									"text" : "r /vr/update"
 								}
 
 							}
@@ -1753,9 +1771,9 @@
 									"numinlets" : 0,
 									"numoutlets" : 1,
 									"outlettype" : [ "" ],
-									"patching_rect" : [ 33.0, 148.0, 119.0, 22.0 ],
+									"patching_rect" : [ 33.0, 148.0, 71.0, 22.0 ],
 									"style" : "",
-									"text" : "r vr-pre-render-bang"
+									"text" : "r /vr/update"
 								}
 
 							}
@@ -3797,9 +3815,9 @@
 									"numinlets" : 0,
 									"numoutlets" : 1,
 									"outlettype" : [ "" ],
-									"patching_rect" : [ 207.0, 53.0, 136.0, 22.0 ],
+									"patching_rect" : [ 207.0, 53.0, 111.0, 22.0 ],
 									"style" : "",
-									"text" : "receive vr-tracking-data"
+									"text" : "receive /vr/tracking"
 								}
 
 							}
