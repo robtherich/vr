@@ -68,13 +68,13 @@
 				"box" : 				{
 					"fontface" : 2,
 					"id" : "obj-15",
-					"linecount" : 6,
+					"linecount" : 7,
 					"maxclass" : "comment",
 					"numinlets" : 1,
 					"numoutlets" : 0,
-					"patching_rect" : [ 414.291656, 97.0, 131.0, 87.0 ],
+					"patching_rect" : [ 414.291656, 88.0, 130.0, 100.0 ],
 					"style" : "",
-					"text" : "@sync 0 so that the main display doesn't interfere with the HMD refresh rate, which should be 90fps to prevent nausea."
+					"text" : "@displaylink/@sync 0 so that the main display doesn't interfere with the HMD refresh rate, which should be 90fps to prevent nausea."
 				}
 
 			}
@@ -643,6 +643,19 @@
 						"subpatcher_template" : "",
 						"boxes" : [ 							{
 								"box" : 								{
+									"id" : "obj-5",
+									"maxclass" : "comment",
+									"numinlets" : 1,
+									"numoutlets" : 0,
+									"patching_rect" : [ 254.5, 87.0, 218.0, 20.0 ],
+									"presentation_rect" : [ 338.75, 31.5, 0.0, 0.0 ],
+									"style" : "",
+									"text" : "Tracking for additional controllers here."
+								}
+
+							}
+, 							{
+								"box" : 								{
 									"comment" : "",
 									"id" : "obj-9",
 									"index" : 1,
@@ -707,14 +720,15 @@
 							}
 , 							{
 								"box" : 								{
+									"fontname" : "Arial Italic",
 									"id" : "obj-23",
 									"linecount" : 3,
 									"maxclass" : "comment",
 									"numinlets" : 1,
 									"numoutlets" : 0,
-									"patching_rect" : [ 262.25, 60.0, 262.0, 47.0 ],
+									"patching_rect" : [ 915.0, 498.0, 209.0, 47.0 ],
 									"style" : "",
-									"text" : "tracking for additional controllers here (thanks to Mathieu Chamagne for adding support for additional trackers!)"
+									"text" : "Thanks to kcoul (https://github.com/kcoul) for adding support for additional trackers!"
 								}
 
 							}
@@ -1190,9 +1204,9 @@
 					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "", "bang", "" ],
-					"patching_rect" : [ 24.0, 97.0, 321.0, 35.0 ],
+					"patching_rect" : [ 24.0, 97.0, 307.0, 35.0 ],
 					"style" : "",
-					"text" : "jit.world vr @fps 90 @enable 1 @sync 0 @size 800 400 @phys_worldname vr-phys"
+					"text" : "jit.world vr @fps 90 @enable 1 @sync 0 @displaylink 0 @size 800 400 @phys_worldname vr-phys"
 				}
 
 			}
@@ -5328,7 +5342,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-28", 0 ],
-					"midpoints" : [ 184.5, 143.0, 33.5, 143.0 ],
+					"midpoints" : [ 177.5, 143.0, 33.5, 143.0 ],
 					"source" : [ "obj-2", 1 ]
 				}
 
