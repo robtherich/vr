@@ -32,9 +32,3 @@ The [Oculus Home](http://www.oculus.com/en-us/setup/) software should be install
 **HTC Vive** 
 
 The [Steam and SteamVR](http://store.steampowered.com/steamvr) should be installed & calibrated. They are free, but you need to create a Steam account (also free).
-
-## Development
-
-See the ```/source``` folder. You may need to ```git submodules init && git submodules update``` to get all dependencies.
-
-
