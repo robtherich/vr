@@ -2,6 +2,8 @@
 
 This Max package adds support for the Oculus Rift and the HTC Vive head-mounted displays (HMD) hardware. 
 
+[Read Cory Metcalf's introduction here](https://cycling74.com/articles/hardware-overview-wtc-vive)
+
 ## Installing
 
 Make sure you have the prerequisite hardware and drivers (see below).
@@ -32,3 +34,9 @@ The [Oculus Home](http://www.oculus.com/en-us/setup/) software should be install
 **HTC Vive** 
 
 The [Steam and SteamVR](http://store.steampowered.com/steamvr) should be installed & calibrated. They are free, but you need to create a Steam account (also free).
+
+## History
+
+This package draws from earlier work supporting HMDs in Max since the Oculus DK1 in 2013 -- [see this epic forum topic](https://cycling74.com/forums/oculus-rift).
+
+Thanks to KCOUL, Mathiew Chamagne, Dale Rosen for additional contributions!
