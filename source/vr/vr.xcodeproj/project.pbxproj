@@ -87,6 +87,7 @@
 				2FBBEADA08F335360078DB84 /* Sources */,
 				2FBBEADC08F335360078DB84 /* Frameworks */,
 				2FBBEADF08F335360078DB84 /* Rez */,
+				89305F5A1F11B9AA00C0D098 /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -141,6 +142,22 @@
 		};
 /* End PBXRezBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		89305F5A1F11B9AA00C0D098 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "export DYLIB=libopenvr_api.dylib\nmkdir -p \"$TARGET_BUILD_DIR/$PROJECT_NAME.mxo/Contents/Frameworks\"\ncp -f \"$SRCROOT/openvr/lib/osx32/$DYLIB\" \"$TARGET_BUILD_DIR/$PROJECT_NAME.mxo/Contents/Frameworks\"\ninstall_name_tool -id \"@loader_path/../Frameworks/$DYLIB\" \"$TARGET_BUILD_DIR/$PROJECT_NAME.mxo/Contents/Frameworks/$DYLIB\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		2FBBEADA08F335360078DB84 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -181,6 +198,7 @@
 					openvr/headers,
 					LibOVR/Include,
 				);
+				LIBRARY_SEARCH_PATHS = openvr/lib/osx32;
 				OTHER_LDFLAGS = (
 					"-framework",
 					MaxAudioAPI,
@@ -189,6 +207,7 @@
 					"$(C74_SYM_LINKER_FLAGS)",
 					"-framework",
 					OpenGL,
+					"-lopenvr_api",
 				);
 				PRODUCT_NAME = vr;
 			};
@@ -209,6 +228,7 @@
 					openvr/headers,
 					LibOVR/Include,
 				);
+				LIBRARY_SEARCH_PATHS = openvr/lib/osx32;
 				OTHER_LDFLAGS = (
 					"-framework",
 					MaxAudioAPI,
@@ -217,6 +237,7 @@
 					"$(C74_SYM_LINKER_FLAGS)",
 					"-framework",
 					OpenGL,
+					"-lopenvr_api",
 				);
 				PRODUCT_NAME = vr;
 			};

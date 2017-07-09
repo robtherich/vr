@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "2FBBEAD608F335360078DB84"
-               BuildableName = "example.mxo"
+               BuildableName = "vr.mxo"
                BlueprintName = "max-external"
                ReferencedContainer = "container:vr.xcodeproj">
             </BuildableReference>
@@ -46,7 +46,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2FBBEAD608F335360078DB84"
-            BuildableName = "example.mxo"
+            BuildableName = "vr.mxo"
             BlueprintName = "max-external"
             ReferencedContainer = "container:vr.xcodeproj">
          </BuildableReference>
@@ -64,7 +64,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "2FBBEAD608F335360078DB84"
-            BuildableName = "example.mxo"
+            BuildableName = "vr.mxo"
             BlueprintName = "max-external"
             ReferencedContainer = "container:vr.xcodeproj">
          </BuildableReference>
