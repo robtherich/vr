@@ -8,38 +8,29 @@
 // 		swap buffers (i.e. bang() jit.gl.render)
 // the stuff with * symbols should happen as near as possible
 
-#include "c74_jitter.h"
+#include "al_max.h"
 
-using namespace c74::max;
 
 extern "C" {
-	#include "jit.gl.h"
-
 
 #define VR_DEBUG_POST(fmt, ...) do {} while (0)
 #ifdef WIN_VERSION
 	// needed this for glFrameBuffer / GL_FRAMEBUFFER symbols
-	// (and needed to comment out the jit.common.h include)
 	#include "jit.gl.procs.h"
 	#include "jit.gl.support.h"
 	
-	#define USE_DRIVERS 1
+	#define USE_OCULUS_DRIVER 1
+	#define USE_STEAM_DRIVER 1
 
 	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__); } while (0)
 	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug line %d:%s(): " fmt, __LINE__, __func__, __VA_ARGS__); } while (0)
 #else
 
-
+	// OSX:
+	//#define USE_OCULUS_DRIVER 1
+	#define USE_STEAM_DRIVER 1
 
 #endif
-
-	// needed to declare these here, as they aren't declared in c74_jitter.h:
-	void * jit_object_findregistered(t_symbol *s);
-	void * jit_object_register(void *x, t_symbol *s);
-	void * jit_object_findregistered(c74::max::t_symbol *s);
-	void * jit_object_register(void *x, c74::max::t_symbol *s);
-	long jit_atom_arg_getsym(t_symbol ** c, long idx, long ac, t_atom *av);
-	long jit_gl_report_error(char * prefix);
 
 }
 
@@ -77,24 +68,6 @@ static t_symbol * ps_buttons;
 
 static t_symbol * ps_oculus;
 static t_symbol * ps_steam;
-
-// jitter uses xyzw format
-// glm constructor uses wxyz format
-// though the data is stored in xyzw
-// xyzw -> wxyz
-glm::quat quat_from_jitter(glm::quat const & v) {
-	return glm::quat(v.z, v.w, v.x, v.y);
-}
-
-/*
-glm::quat quat_from_jitter(t_jit_quat const & v) {
-	return glm::quat(v.w, v.x, v.y, v.z);
-}*/
-
-// wxyz -> xyzw
-glm::quat quat_to_jitter(glm::quat const & v) {
-	return glm::quat(v.x, v.y, v.z, v.w);
-}
 
 glm::quat to_glm(ovrQuatf const q) {
 	return glm::quat(q.w, q.x, q.y, q.z);
@@ -362,9 +335,11 @@ struct Vr {
 	}
 
 	void update_availability() {
-#ifdef USE_DRIVERS
+#ifdef USE_OCULUS_DRIVER
 		oculus_available = oculus_is_available();
 		object_attr_touch(&ob, gensym("oculus_available"));
+#endif 
+#ifdef USE_STEAM_DRIVER
 		steam_available = steam_is_available();
 		object_attr_touch(&ob, gensym("steam_available"));
 #endif
@@ -383,18 +358,25 @@ struct Vr {
 
 		update_availability();
 
-		#ifdef USE_DRIVERS
+		#ifdef USE_STEAM_DRIVER
 		// figure out which driver we want to use:
 		if (driver == ps_steam) {
 			connected = steam_connect();
+			#ifdef USE_OCULUS_DRIVER
 			if (!connected && !preferred_driver_only) {
 				connected = oculus_connect();
 			}
-		} else {
+			#endif
+		}
+		#endif
+		#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			connected = oculus_connect();
+			#ifdef USE_STEAM_DRIVER
 			if (!connected && !preferred_driver_only) {
 				connected = steam_connect();
 			}
+			#endif
 		}
 		#endif
 
@@ -431,11 +413,13 @@ struct Vr {
 		VR_DEBUG_POST("disconnect");
 
 		// TODO: driver-specific stuff
-		#ifdef USE_DRIVERS
+		#ifdef USE_STEAM_DRIVER
 		if (driver == ps_steam) {
 			steam_disconnect();
 		}
-		else {
+		#endif
+		#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			oculus_disconnect();
 		}
 		#endif
@@ -452,14 +436,16 @@ struct Vr {
 		
 		if (connected) {
 			// TODO get driver details & output
-			#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 			if (driver == ps_steam) {
 				steam_configure();
 			}
-			else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+			if (driver == ps_oculus) {
 				oculus_configure();
 			}
-			#endif
+#endif
 		}
 
 		// output recommended texture dim:
@@ -486,22 +472,26 @@ struct Vr {
 	}
 	
 	void haptic(int hand, float intensity) {
-#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 		if (driver == ps_steam) {
 			steam_haptic(hand, intensity);
 		}
-		else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			oculus_haptic(hand, intensity);
 		}
 #endif
 	}
 
 	void battery() {
-#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 		if (driver == ps_steam) {
 			steam_battery();
 		}
-		else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			// not in the SDK API apparently
 		}
 #endif
@@ -509,7 +499,7 @@ struct Vr {
 
 	void boundary() {
 		t_atom a[2];
-#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 		if (driver == ps_steam) {
 			if (!steam.hmd) return;
 
@@ -523,7 +513,9 @@ struct Vr {
 				outlet_anything(outlet_msg, gensym("boundary"), 2, a);
 			}
 		}
-		else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			if (!oculus.session) return;
 			ovrVector3f dim;
 			if (OVR_SUCCESS(ovr_GetBoundaryDimensions(oculus.session, ovrBoundary_PlayArea, &dim))) {
@@ -550,14 +542,16 @@ struct Vr {
 			glGenFramebuffersEXT(1, &fbo_id);
 		}
 
-		#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 		if (driver == ps_steam) {
 			steam_create_gpu_resources();
 		}
-		else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus) {
 			oculus_create_gpu_resources();
 		}
-		#endif
+#endif
 	}
 
 	void release_gpu_resources() {
@@ -569,14 +563,16 @@ struct Vr {
 			fbo_id = 0;
 
 			// TODO driver specific
-			#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 			if (driver == ps_steam) {
 				steam_release_gpu_resources();
 			}
-			else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+			if (driver == ps_oculus)  {
 				oculus_release_gpu_resources();
 			}
-			#endif
+#endif
 		}
 	}
 	
@@ -596,14 +592,16 @@ struct Vr {
 		
 		// TODO: driver poll events
 		if (connected) {
-			#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 			if (driver == ps_steam) {
 				steam_bang();
 			}
-			else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+			if (driver == ps_oculus)  {
 				oculus_bang();
 			}
-			#endif
+#endif
 		}
 		else {
 			// perhaps, poll for availability?
@@ -677,18 +675,20 @@ struct Vr {
 			}
 
 			// TODO driver specific
-			#ifdef USE_DRIVERS
+#ifdef USE_STEAM_DRIVER
 			if (driver == ps_steam) {
 				if (!steam_submit_texture(input_texture_id, input_texture_dim)) {
 					object_error(&ob, "problem submitting texture");
 				}
 			}
-			else {
+#endif
+#ifdef USE_OCULUS_DRIVER
+			if (driver == ps_oculus) {
 				if (!oculus_submit_texture(input_texture_id, input_texture_dim)) {
 					object_error(&ob, "problem submitting texture");
 				}
 			}
-			#endif
+#endif
 		}
 		
 		t_atom a[1];
@@ -832,7 +832,7 @@ struct Vr {
 
 	//////////////////////////////////////////////////
 	
-#ifdef USE_DRIVERS
+#ifdef USE_OCULUS_DRIVER
 
 	static void oculusrift_quit() {
 		if (oculus_initialized) ovr_Shutdown();
@@ -1366,9 +1366,12 @@ struct Vr {
 		}
 	}
 	
+#endif
 
 	/////////////////////////////////////////////////////////////////////////////////////////////////
-
+	
+#ifdef USE_STEAM_DRIVER
+	
 	static t_symbol * steam_get_tracked_device_name(vr::IVRSystem *pHmd, vr::TrackedDeviceIndex_t unDevice, vr::TrackedDeviceProperty prop, vr::TrackedPropertyError *peError = NULL)
 	{
 		uint32_t unRequiredBufferLen = pHmd->GetStringTrackedDeviceProperty(unDevice, prop, NULL, 0, peError);
@@ -2047,9 +2050,7 @@ struct Vr {
 			outlet_anything(outlet_msg, ps_camera, 2, a);
 		}
 	}
-
-
-#endif // ifdef USE_DRIVERS
+#endif
 };
 
 void vr_connect(Vr * x) { x->connect(); }
@@ -2085,7 +2086,7 @@ void vr_boundary(Vr * x) { x->boundary(); }
 
 t_max_err vr_use_camera_set(Vr *x, t_object *attr, long argc, t_atom *argv) {
 	x->use_camera = atom_getlong(argv);
-	#ifdef USE_DRIVERS
+	#ifdef USE_STEAM_DRIVER
 	if (x->use_camera > 0) {
 		switch (x->use_camera) {
 		case 1: x->steam.frametype = vr::VRTrackedCameraFrameType_Undistorted; break;
@@ -2196,7 +2197,7 @@ void vr_free(Vr* x) {
 }
 
 
-void vr_assist(Vr* self, void* unused, t_assist_function m, long a, char* s) {
+void vr_assist(Vr* self, void* unused, long m, long a, char* s) {
 	if (m == ASSIST_INLET) { // inlet
 		sprintf(s, "bang to update tracking, texture to submit, other messages");
 	}
@@ -2245,23 +2246,23 @@ void ext_main(void* r) {
 
 	this_class = class_new("vr", (method)vr_new, (method)vr_free, sizeof(Vr), 0L, A_GIMME, 0);
 	
-	long ob3d_flags = jit_ob3d_flags::NO_MATRIXOUTPUT 
-					//| jit_ob3d_flags::DOES_UI
-					//| jit_ob3d_flags::NO_ROTATION_SCALE
-					| jit_ob3d_flags::NO_POLY_VARS
-					| jit_ob3d_flags::NO_BLEND
-					| jit_ob3d_flags::NO_TEXTURE
-					| jit_ob3d_flags::NO_MATRIXOUTPUT
-					| jit_ob3d_flags::AUTO_ONLY
-					| jit_ob3d_flags::NO_DEPTH
-					| jit_ob3d_flags::NO_ANTIALIAS
-					| jit_ob3d_flags::NO_FOG
-					| jit_ob3d_flags::NO_LIGHTING_MATERIAL
-					| jit_ob3d_flags::NO_SHADER
-					| jit_ob3d_flags::NO_BOUNDS
-					| jit_ob3d_flags::NO_COLOR
+	long ob3d_flags = JIT_OB3D_NO_MATRIXOUTPUT 
+					//| JIT_OB3D_DOES_UI
+					//| JIT_OB3D_NO_ROTATION_SCALE
+					| JIT_OB3D_NO_POLY_VARS
+					| JIT_OB3D_NO_BLEND
+					| JIT_OB3D_NO_TEXTURE
+					| JIT_OB3D_NO_MATRIXOUTPUT
+					| JIT_OB3D_AUTO_ONLY
+					| JIT_OB3D_NO_DEPTH
+					| JIT_OB3D_NO_ANTIALIAS
+					| JIT_OB3D_NO_FOG
+					| JIT_OB3D_NO_LIGHTING_MATERIAL
+					| JIT_OB3D_NO_SHADER
+					| JIT_OB3D_NO_BOUNDS
+					| JIT_OB3D_NO_COLOR
 					;
-	void * ob3d = jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
+	jit_ob3d_setup(this_class, calcoffset(Vr, ob3d), ob3d_flags);
 	
 	// define our OB3D draw methods
 	jit_class_addmethod(this_class, (method)(vr_draw), "ob3d_draw", A_CANT, 0L);
