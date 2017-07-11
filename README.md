@@ -35,6 +35,10 @@ The [Oculus Home](http://www.oculus.com/en-us/setup/) software should be install
 
 The [Steam and SteamVR](http://store.steampowered.com/steamvr) should be installed & calibrated. They are free, but you need to create a Steam account (also free).
 
+**Configuration tips**
+
+It's important that both Max/MSP/Jitter and the head-mounted display driver are running on the same GPU so that they can share texture data. If you see `submit error: Texture is on wrong device`, you might need to check that the desktop displays are plugged into the same GPU as the HMD, and that in your display settings Max is using the GPU rather than any CPU-embedded discrete graphics device. For example, in the Nvidia Settings, this means selecting the Max application and setting it for Maximum Performance.  
+
 ## History
 
 This package draws from earlier work supporting HMDs in Max since the Oculus DK1 in 2013 -- [see this epic forum topic](https://cycling74.com/forums/oculus-rift).
