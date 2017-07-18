@@ -36,7 +36,7 @@
 
 //	q must be a normalized quaternion
 template<typename T, glm::precision P>
-glm::tvec3<T, P> quat_unrotate(glm::quat const & q, glm::tvec3<T, P> & v) {
+glm::tvec3<T, P> quat_unrotate(glm::tquat<T, P> const & q, glm::tvec3<T, P> & v) {
 	// return quat_mul(quat_mul(quat_conj(q), vec4(v, 0)), q).xyz;
 	// reduced:
 	glm::tvec4<T, P> p(
@@ -54,7 +54,7 @@ glm::tvec3<T, P> quat_unrotate(glm::quat const & q, glm::tvec3<T, P> & v) {
 
 //	q must be a normalized quaternion
 template<typename T, glm::precision P>
-glm::tvec3<T, P> quat_rotate(glm::quat const & q, glm::tvec3<T, P> & v) {
+glm::tvec3<T, P> quat_rotate(glm::tquat<T, P> const & q, glm::tvec3<T, P> & v) {
 	glm::tvec4<T, P> p(
 		q.w*v.x + q.y*v.z - q.z*v.y,	// x
 		q.w*v.y + q.z*v.x - q.x*v.z,	// y
