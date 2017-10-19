@@ -25,7 +25,7 @@ At present the recommended PC requirements to cover both the Oculus Rift and the
 - **CPU:** Intel i5-4590 / AMD FX 8350 equivalent or greater
 - **Memory:** 8GB+ RAM
 - **USB:** 3x USB 3.0 ports plus 1x USB 2.0 port
-- **OS:** Windows 7 SP1 64 bit or newer (No OSX support at present)
+- **OS:** Windows 7 SP1 64 bit or newer (OSX might also work in High Sierra)
 
 **Oculus Rift**
 
