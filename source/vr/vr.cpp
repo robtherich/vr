@@ -2252,7 +2252,6 @@ void ext_main(void* r) {
 					| JIT_OB3D_NO_POLY_VARS
 					| JIT_OB3D_NO_BLEND
 					| JIT_OB3D_NO_TEXTURE
-					| JIT_OB3D_NO_MATRIXOUTPUT
 					| JIT_OB3D_AUTO_ONLY
 					| JIT_OB3D_NO_DEPTH
 					| JIT_OB3D_NO_ANTIALIAS
@@ -2306,7 +2305,6 @@ void ext_main(void* r) {
 
 	//CLASS_ATTR_LONG(c, "tracking_level", 0, oculusrift, tracking_level);
 	//CLASS_ATTR_ACCESSORS(c, "tracking_level", NULL, oculusrift_tracking_level_set);
-	
 	
 	CLASS_ATTR_FLOAT(this_class, "near_clip", 0, Vr, near_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "near_clip", NULL, vr_near_clip_set);
