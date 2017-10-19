@@ -11,5 +11,6 @@ build64
 *.o
 *.dylib
 tmp
+*.xcuserstate
 
 package-info.json
