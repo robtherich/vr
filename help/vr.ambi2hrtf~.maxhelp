@@ -9,7 +9,7 @@
 			"modernui" : 1
 		}
 ,
-		"rect" : [ 415.0, 79.0, 991.0, 786.0 ],
+		"rect" : [ 290.0, 79.0, 991.0, 786.0 ],
 		"bglocked" : 0,
 		"openinpresentation" : 0,
 		"default_fontsize" : 12.0,
@@ -553,7 +553,7 @@
 							"modernui" : 1
 						}
 ,
-						"rect" : [ 474.0, 99.0, 932.0, 663.0 ],
+						"rect" : [ 300.0, 79.0, 932.0, 663.0 ],
 						"bgcolor" : [ 0.9, 0.9, 0.9, 1.0 ],
 						"editing_bgcolor" : [ 0.9, 0.9, 0.9, 1.0 ],
 						"bglocked" : 0,
@@ -1995,8 +1995,8 @@
 			}
  ],
 		"parameters" : 		{
-			"obj-6::obj-21::obj-6" : [ "live.tab[3]", "live.tab[1]", 0 ],
-			"obj-6::obj-35" : [ "[5]", "Level", 0 ]
+			"obj-6::obj-35" : [ "[5]", "Level", 0 ],
+			"obj-6::obj-21::obj-6" : [ "live.tab[3]", "live.tab[1]", 0 ]
 		}
 ,
 		"dependency_cache" : [ 			{

@@ -20,7 +20,7 @@ extern "C" {
 #include "al_math.h"
 
 /*
-
+ 
  Main capabilities of Steam Audio:
  
  NON-ENVIRONMENTAL:
@@ -57,27 +57,27 @@ extern "C" {
  direct sound (direction independent) fx:
  
 	iplCreateDirectSoundEffect()
-		get parameters (direction, distance atten, absorp, delay, occlusion, transmission factors):
-		iplGetDirectSoundPath(env_renderer, listener pose, source pos + radius, settings)
-		iplApplyDirectSoundEffect()
-		seems designed for use with mono sources, but maybe it can also apply to virtual speakers?
+ get parameters (direction, distance atten, absorp, delay, occlusion, transmission factors):
+ iplGetDirectSoundPath(env_renderer, listener pose, source pos + radius, settings)
+ iplApplyDirectSoundEffect()
+ seems designed for use with mono sources, but maybe it can also apply to virtual speakers?
  
  convolution fx:
  
 	direction-dependent convolution reverb encoded in ambisonics
 	
 	iplCreateConvolutionEffect()
-		
-		put source in:
-			iplSetDryAudioForConvolutionEffect() + position
-		get reverb out:
-			per source: iplGetWetAudioForConvolutionEffect()
-			all sources: iplGetMixedEnvironmentalAudio()
  
-  baking & probes:
+ put source in:
+ iplSetDryAudioForConvolutionEffect() + position
+ get reverb out:
+ per source: iplGetWetAudioForConvolutionEffect()
+ all sources: iplGetMixedEnvironmentalAudio()
+ 
+ baking & probes:
 	not sure if this is something useful for Max?
 	if there's a desire to use baked rendering (lower cpu but higher memory cost)
-    probes are needed to bake
+ probes are needed to bake
  
  Generally:
  
@@ -86,7 +86,7 @@ extern "C" {
  docs also suggest mixing all sources into another convolution located at the listener position
  (i.e. all sources go into two reverbs)
  
-*/
+ */
 #include "steamaudio_api/include/phonon.h"
 
 #include <new> // for in-place constructor
@@ -130,13 +130,13 @@ struct VRMSP_Global {
 		mono_format.channelLayoutType	= IPL_CHANNELLAYOUTTYPE_SPEAKERS;
 		mono_format.channelLayout		= IPL_CHANNELLAYOUT_MONO;
 		mono_format.numSpeakers			= 1;
-		mono_format.channelOrder		= IPL_CHANNELORDER_INTERLEAVED;
+		mono_format.channelOrder		= IPL_CHANNELORDER_DEINTERLEAVED;
 		
 		hrtf_format.channelLayoutType	= IPL_CHANNELLAYOUTTYPE_SPEAKERS;
 		hrtf_format.channelLayout		= IPL_CHANNELLAYOUT_STEREO;
 		hrtf_format.numSpeakers			= 2;
-		hrtf_format.channelOrder		= IPL_CHANNELORDER_INTERLEAVED;
-
+		hrtf_format.channelOrder		= IPL_CHANNELORDER_DEINTERLEAVED;
+		
 		// TODO attrify, esp. maxConvolutionSources and ambisonicsOrder
 		// TODO if any of these change, need to run setup_scene and setup_environment again
 		// which in turn may require other vr~ objects to rebuild
@@ -205,7 +205,7 @@ struct VRMSP_Global {
 				return;
 			}
 			
-			setup_environment();
+			//setup_environment();
 			
 			object_post(0, "vr~ changed global settings %d %f\n", framesize, samplerate);
 			
@@ -282,7 +282,7 @@ struct VRMSP_Global {
 			// NOTE: can also load/save scenes via iplSaveFinalizedScene/iplLoadFinalizedScene
 			// NOTE: can also export to obj: iplDumpSceneToObjFile
 		}
-
+		
 	}
 	
 	// TODO: this can happen at any time
@@ -295,7 +295,7 @@ struct VRMSP_Global {
 		
 		// TODO: configure this
 		// not sure if it wants to be the same as hrtf_format?
-		IPLAudioFormat output_format;
+		//IPLAudioFormat output_format;
 		
 		
 		if (IPL_STATUS_SUCCESS != iplCreateEnvironment(context,
@@ -323,9 +323,9 @@ struct VRMSP_Global {
 } global;
 
 /*
-
-void conv() {
-
+ 
+ void conv() {
+ 
 	// phonon_environmental_renderer needs to exist
 	// typically expects to use data baked from a game engine
 	// but a more expensive REALTIME option is available
@@ -337,80 +337,90 @@ void conv() {
 	IPLAudioFormat inputFormat; // e.g. ambisonic
 	IPLAudioFormat outputFormat; // e.g. ambisonic
 	if (IPL_STATUS_SUCCESS != iplCreateConvolutionEffect(global.environmental_renderer,
-														 name,
-														 simulationType,
-														 inputFormat,
-														 outputFormat,
-														 &convolution_effect)) {
-		object_error(0, "failed to create convolution effect");
-		return;
+ name,
+ simulationType,
+ inputFormat,
+ outputFormat,
+ &convolution_effect)) {
+ object_error(0, "failed to create convolution effect");
+ return;
 	}
 	
 	// audio loop
 	{
-		IPLVector3 sourcePosition; // world-space position of source
-		IPLAudioBuffer dryAudio; // input
-		iplSetDryAudioForConvolutionEffect(convolution_effect,
-										   sourcePosition,
-										   dryAudio);
-		
- // for one source immediately:
-		IPLVector3 listenerPosition;
-		IPLVector3 listenerAhead; // unit forward vector of listener orientation,
-		IPLVector3 listenerUp; // unit up vector of listener
-		IPLAudioBuffer wetAudio; // output
-		iplGetWetAudioForConvolutionEffect(convolution_effect,
-										   listenerPosition,
-										   listenerAhead,
-										   listenerUp,
-										   wetAudio);
+ IPLVector3 sourcePosition; // world-space position of source
+ IPLAudioBuffer dryAudio; // input
+ iplSetDryAudioForConvolutionEffect(convolution_effect,
+ sourcePosition,
+ dryAudio);
  
-		// more efficient: for all sources
-		// but for this to work, it would need to be a separate object that comes after all sources in the dsp chain
-		// (otherwise there'd be a buffer of latency for some sources)
-		IPLhandle renderer;
-		IPLVector3 listenerPosition; // world-space
-		IPLVector3 listenerAhead, listenerUp; // unit vectors from listener orientation
-		IPLAudioBuffer mixedWetAudio;
-		iplGetMixedEnvironmentalAudio(global.environmental_renderer,
-									  listenerPosition,
-									  listenerAhead,
-									  listenerUp,
-									  mixedWetAudio);
+ // for one source immediately:
+ IPLVector3 listenerPosition;
+ IPLVector3 listenerAhead; // unit forward vector of listener orientation,
+ IPLVector3 listenerUp; // unit up vector of listener
+ IPLAudioBuffer wetAudio; // output
+ iplGetWetAudioForConvolutionEffect(convolution_effect,
+ listenerPosition,
+ listenerAhead,
+ listenerUp,
+ wetAudio);
+ 
+ // more efficient: for all sources
+ // but for this to work, it would need to be a separate object that comes after all sources in the dsp chain
+ // (otherwise there'd be a buffer of latency for some sources)
+ IPLhandle renderer;
+ IPLVector3 listenerPosition; // world-space
+ IPLVector3 listenerAhead, listenerUp; // unit vectors from listener orientation
+ IPLAudioBuffer mixedWetAudio;
+ iplGetMixedEnvironmentalAudio(global.environmental_renderer,
+ listenerPosition,
+ listenerAhead,
+ listenerUp,
+ mixedWetAudio);
 	}
-}
-*/
+ }
+ */
 
 struct VRMSP_ambi2hrtf {
 	t_pxobject ob;
 	// attrs:
-	t_atom_long normalization = 0;
-	t_atom_long channelorder = 0;
+	//t_atom_long normalization = 0;
+	//t_atom_long channelorder = 0;
 	// A unit quaternion describing the 3D transformation from world space to listener space coordinates.
-	glm::quat orientation, orientation_prev;
+	//glm::quat orientation, orientation_prev;
 	
-	IPLAudioFormat input_format; // must be ambisonic
+	IPLAudioFormat ambisonic_format; // must be ambisonic
 	IPLhandle ambisonic_hrtf_effect = 0;
 	IPLhandle ambisonic_rotator = 0;
+	
 	// pre-allocated to maximum vector size, in case this is cheaper?
-	IPLfloat32 * source_buffer;
-	IPLfloat32 * rotated_buffer;
-	IPLfloat32 * output_buffer;
-
+	IPLfloat32 * ambi_buffers[16];
+	IPLfloat32 * output_buffers[2];
+	
 	VRMSP_ambi2hrtf() {
-		// TODO allocate according to ambiorder
-		source_buffer = new float[4096 * 4];
-		rotated_buffer = new float[4096 * 4];
-		output_buffer = new float[4096 * 2];
+		// according to https://github.com/ValveSoftware/steam-audio/issues/38
+		// the only supported combination is IPL_CHANNELORDER_DEINTERLEAVED,
+		// IPL_AMBISONICSORDERING_ACN, and IPL_AMBISONICSNORMALIZATION_N3D for the input buffer
 		
-		orientation[0] = orientation[1] = orientation[2] = 0;
-		orientation[3] = 1;
+		ambisonic_format.channelLayoutType = IPL_CHANNELLAYOUTTYPE_AMBISONICS;
+		ambisonic_format.numSpeakers = 16; //4; // TODO: depends on ambi type
+		ambisonic_format.channelOrder = IPL_CHANNELORDER_DEINTERLEAVED;
+		ambisonic_format.ambisonicsOrder = 3; //1;
+		ambisonic_format.ambisonicsOrdering = IPL_AMBISONICSORDERING_ACN;
+		ambisonic_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_N3D;
 		
-		input_format.ambisonicsOrder = 1;
-		input_format.numSpeakers = 4; // TODO: depends on ambi type
+		for (int i=0; i<ambisonic_format.numSpeakers; i++) {
+			ambi_buffers[i] = new float[4096];
+		}
+		for (int i=0; i<2; i++) {
+			output_buffers[i] = new float[4096];
+		}
+		
+		//orientation[0] = orientation[1] = orientation[2] = 0;
+		//orientation[3] = 1;
 		
 		// signal inlets:
-		dsp_setup(&ob, input_format.numSpeakers);
+		dsp_setup(&ob, ambisonic_format.numSpeakers);
 		
 		// stereo output:
 		outlet_new(&ob, "signal");
@@ -420,9 +430,12 @@ struct VRMSP_ambi2hrtf {
 	~VRMSP_ambi2hrtf() {
 		cleanup();
 		
-		delete[] source_buffer;
-		delete[] rotated_buffer;
-		delete[] output_buffer;
+		for (int i=0; i<ambisonic_format.numSpeakers; i++) {
+			delete[] ambi_buffers[i];
+		}
+		for (int i=0; i<2; i++) {
+			delete[] output_buffers[i];
+		}
 	}
 	
 	void cleanup() {
@@ -437,28 +450,27 @@ struct VRMSP_ambi2hrtf {
 		cleanup();
 		
 		// create binaural effect:
-		input_format.channelLayoutType = IPL_CHANNELLAYOUTTYPE_AMBISONICS;
-		input_format.channelOrder = IPL_CHANNELORDER_INTERLEAVED;
-		
-		switch (normalization) {
+		/*
+		 switch (channelorder) {
 			case 1: input_format.ambisonicsOrdering = IPL_AMBISONICSORDERING_ACN; break;
 			default: input_format.ambisonicsOrdering = IPL_AMBISONICSORDERING_FURSEMALHAM; break;
-		}
-		switch (normalization) {
+		 }
+		 switch (normalization) {
 			case 2: input_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_FURSEMALHAM; break;
 			case 1: input_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_SN3D; break;
 			default: input_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_N3D; break;
-		}
+		 }
+		 */
 		
 		if (IPL_STATUS_SUCCESS != iplCreateAmbisonicsBinauralEffect(global.binaural_renderer,
-																	input_format,
+																	ambisonic_format,
 																	global.hrtf_format,
 																	&ambisonic_hrtf_effect)) {
 			object_error(0, "failed to create Ambisonics HRTF effect");
 			return;
 		}
 		
-		if (IPL_STATUS_SUCCESS != iplCreateAmbisonicsRotator(input_format.ambisonicsOrder, &ambisonic_rotator)) {
+		if (IPL_STATUS_SUCCESS != iplCreateAmbisonicsRotator(ambisonic_format.ambisonicsOrder, &ambisonic_rotator)) {
 			object_error(0, "failed to create Ambisonics rotator effect");
 			return;
 		}
@@ -472,33 +484,17 @@ struct VRMSP_ambi2hrtf {
 		// phonon uses float32 processing, so we need to copy :-(
 		
 		IPLAudioBuffer inbuffer;
-		inbuffer.format = input_format;
+		inbuffer.format = ambisonic_format;
 		inbuffer.numSamples = sampleframes;
-		inbuffer.interleavedBuffer = source_buffer;
-		
-		IPLAudioBuffer rotbuffer;
-		rotbuffer.format = input_format;
-		rotbuffer.numSamples = sampleframes;
-		rotbuffer.interleavedBuffer = rotated_buffer;
-		
-		IPLAudioBuffer outbuffer;
-		outbuffer.format = global.hrtf_format;
-		outbuffer.numSamples = sampleframes;
-		outbuffer.interleavedBuffer = output_buffer;
+		inbuffer.deinterleavedBuffer = ambi_buffers;
 		
 		// copy input:
-		{
-			t_double * src0 = ins[0];
-			t_double * src1 = ins[1];
-			t_double * src2 = ins[2];
-			t_double * src3 = ins[3];
-			IPLfloat32 * dst = source_buffer;
+		for (int i=0; i<ambisonic_format.numSpeakers; i++) {
+			t_double * src = ins[i];
+			IPLfloat32 * dst = ambi_buffers[i];
 			int n = sampleframes;
 			while (n--) {
-				*dst++ = *src0++;
-				*dst++ = *src1++;
-				*dst++ = *src2++;
-				*dst++ = *src3++;
+				*dst++ = *src++;
 			}
 		}
 		
@@ -506,65 +502,72 @@ struct VRMSP_ambi2hrtf {
 		 // The steam audio implementation doesn't seem to work at all
 		 // see https://github.com/ValveSoftware/steam-audio/issues/38
 		 
-		IPLQuaternion q; // xyzw format. jitter also uses xyzw format, which is handy:
-		q.x = orientation[0];
-		q.y = orientation[1];
-		q.z = orientation[2];
-		q.w = orientation[3];
-		iplSetAmbisonicsRotation(ambisonic_rotator, q);
-		
-		object_post(0, "q %f %f %f %f", q.x, q.y, q.z, q.w);
-		
-		// TODO: It is possible to pass the same value for \c inputAudio and \c outputAudio.
-		// This results in in-place rotation of the Ambisonics data.
-		iplRotateAmbisonicsAudioBuffer(ambisonic_rotator, inbuffer, rotbuffer);
-		*/
-		
-		// rotate input:
-		// TODO: make the slerp interpolation independent of framesize
-		{
+		 IPLQuaternion q; // xyzw format. jitter also uses xyzw format, which is handy:
+		 q.x = orientation[0];
+		 q.y = orientation[1];
+		 q.z = orientation[2];
+		 q.w = orientation[3];
+		 iplSetAmbisonicsRotation(ambisonic_rotator, q);
+		 
+		 object_post(0, "q %f %f %f %f", q.x, q.y, q.z, q.w);
+		 
+		 // TODO: It is possible to pass the same value for \c inputAudio and \c outputAudio.
+		 // This results in in-place rotation of the Ambisonics data.
+		 iplRotateAmbisonicsAudioBuffer(ambisonic_rotator, inbuffer, rotbuffer);
+		 
+		 
+		 // rotate input:
+		 // TODO: make the slerp interpolation independent of framesize
+		 if (0) {
 			// in-place rotation:
 			IPLfloat32 * dst = source_buffer;
 			IPLfloat32 * src = source_buffer;
-
+		 
 			int n = sampleframes;
 			float div = 1.f/sampleframes;
 			while (n--) {
-				src++; // W unused, but need to increment pointer
-				float x = *src++;
-				float y = *src++;
-				float z = *src++;
-				
-				float a = n*div; // slides from 1 to 0
-				glm::quat slerped = glm::slerp(orientation, orientation_prev, a);
-				
-				// or inverse?
-				//glm::mat4 m = glm::mat4_cast(glm::inverse(orientation));
-				//glm::vec4 v = m * glm::vec4(x, y, z, 1.f);
-				
-				// TODO: rotate or unrotate?
-				glm::vec3 dir(x, y, z);
-				glm::vec3 v = quat_rotate(slerped, dir);
-				
-				dst++; // W unused, but need to incremment pointer
-				*dst++ = v.x;
-				*dst++ = v.y;
-				*dst++ = v.z;
+		 src++; // W unused, but need to increment pointer
+		 float x = *src++;
+		 float y = *src++;
+		 float z = *src++;
+		 
+		 float a = n*div; // slides from 1 to 0
+		 glm::quat slerped = glm::slerp(orientation, orientation_prev, a);
+		 
+		 // or inverse?
+		 //glm::mat4 m = glm::mat4_cast(glm::inverse(orientation));
+		 //glm::vec4 v = m * glm::vec4(x, y, z, 1.f);
+		 
+		 // TODO: rotate or unrotate?
+		 glm::vec3 dir(x, y, z);
+		 glm::vec3 v = quat_rotate(slerped, dir);
+		 
+		 dst++; // W unused, but need to incremment pointer
+		 *dst++ = v.x;
+		 *dst++ = v.y;
+		 *dst++ = v.z;
 			}
-		}
-		orientation_prev = orientation;
+		 }
+		 orientation_prev = orientation;
+		 */
+		
+		IPLAudioBuffer outbuffer;
+		outbuffer.format = global.hrtf_format;
+		outbuffer.numSamples = sampleframes;
+		outbuffer.deinterleavedBuffer = output_buffers;
 		
 		iplApplyAmbisonicsBinauralEffect(ambisonic_hrtf_effect, inbuffer, outbuffer);
-			
+		
 		// copy output:
 		{
-			IPLfloat32 * src = output_buffer;
+			IPLfloat32 * src0 = output_buffers[0];
+			IPLfloat32 * src1 = output_buffers[1];
 			t_double * dst0 = outs[0];
 			t_double * dst1 = outs[1];
 			int n = sampleframes;
 			while (n--) {
-				*dst0++ = *src++;
-				*dst1++ = *src++;
+				*dst0++ = *src0++;
+				*dst1++ = *src1++;
 			}
 		}
 	}
@@ -609,18 +612,18 @@ struct VRMSP_ambi2hrtf {
 		class_addmethod(c, (method)VRMSP_ambi2hrtf::static_assist, "assist", A_CANT, 0);
 		class_addmethod(c, (method)VRMSP_ambi2hrtf::static_dsp64, "dsp64", A_CANT, 0);
 		
-		CLASS_ATTR_LONG(c, "normalization", 0, VRMSP_ambi2hrtf, normalization);
-		CLASS_ATTR_ENUMINDEX3(c, "normalization", 0, "n3d", "sn3d", "fuma");
-		CLASS_ATTR_LONG(c, "channelorder", 0, VRMSP_ambi2hrtf, channelorder);
-		CLASS_ATTR_ENUMINDEX2(c, "channelorder", 0, "fuma", "acn");
+		//CLASS_ATTR_LONG(c, "normalization", 0, VRMSP_ambi2hrtf, normalization);
+		//CLASS_ATTR_ENUMINDEX3(c, "normalization", 0, "n3d", "sn3d", "fuma");
+		//CLASS_ATTR_LONG(c, "channelorder", 0, VRMSP_ambi2hrtf, channelorder);
+		//CLASS_ATTR_ENUMINDEX2(c, "channelorder", 0, "fuma", "acn");
 		
-		CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VRMSP_ambi2hrtf, orientation, 4);
+		//CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VRMSP_ambi2hrtf, orientation, 4);
 		
 		class_register(CLASS_BOX, c);
 		class_dspinit(c);
 		static_ambi2hrtf_class = c;
 	}
-
+	
 };
 
 
@@ -630,17 +633,19 @@ struct VRMSP_hrtf {
 	t_pxobject ob;
 	
 	// attr
-	t_atom_long interp = 1;
+	t_atom_long interp;
 	glm::vec3 direction;
-
+	glm::quat quat; // the listener's head orientation
+	
 	IPLhandle binaural = 0;
-	IPLfloat32 * source_buffer;
-	IPLfloat32 * output_buffer;
+	IPLfloat32 * source_buffers[1];
+	IPLfloat32 * output_buffers[2];
 	
 	VRMSP_hrtf() {
 		// pre-allocated to maximum vector size, in case this is cheaper?
-		source_buffer = new float[4096];
-		output_buffer = new float[4096 * 2];
+		source_buffers[0] = new float[4096];
+		output_buffers[0] = new float[4096];
+		output_buffers[1] = new float[4096];
 		
 		// mono input:
 		dsp_setup(&ob, 1);
@@ -648,17 +653,26 @@ struct VRMSP_hrtf {
 		outlet_new(&ob, "signal");
 		outlet_new(&ob, "signal");
 		
+		// attr defaults:
+		interp = 1;
 		// default position in front of listener, to avoid 0,0,0
 		direction.x = 0;
 		direction.y = 0;
 		direction.z = -1;
+		
+		// default orientation has no transform:
+		quat.x = 0;
+		quat.y = 0;
+		quat.z = 0;
+		quat.w = 1;
 	}
 	
 	~VRMSP_hrtf() {
 		cleanup();
 		
-		delete[] source_buffer;
-		delete[] output_buffer;
+		delete[] source_buffers[0];
+		delete[] output_buffers[0];
+		delete[] output_buffers[1];
 	}
 	
 	void cleanup() {
@@ -687,17 +701,17 @@ struct VRMSP_hrtf {
 		IPLAudioBuffer outbuffer;
 		outbuffer.format = global.hrtf_format;
 		outbuffer.numSamples = sampleframes;
-		outbuffer.interleavedBuffer = output_buffer;
+		outbuffer.deinterleavedBuffer = output_buffers;
 		
 		IPLAudioBuffer inbuffer;
 		inbuffer.format = global.mono_format;
 		inbuffer.numSamples = sampleframes;
-		inbuffer.interleavedBuffer = source_buffer;
+		inbuffer.deinterleavedBuffer = source_buffers;
 		
 		// copy input:
 		{
 			t_double * src = ins[0];
-			IPLfloat32 * dst = source_buffer;
+			IPLfloat32 * dst = source_buffers[0];
 			int n = sampleframes;
 			while (n--) { *dst++ = *src++; }
 		}
@@ -706,6 +720,9 @@ struct VRMSP_hrtf {
 		// relative to the listener's coordinate system.
 		// TODO: apply head tracking quat transform to direction
 		glm::vec3 dirn = glm::normalize(direction);
+		
+		// rotate into head orientation:
+		dirn = quat_unrotate(quat, dirn); // quat_rotate or quat_unrotate?
 		
 		// Note:
 		// IPL_HRTFINTERPOLATION_BILINEAR has high CPU cost
@@ -716,7 +733,7 @@ struct VRMSP_hrtf {
 			IPLAudioBuffer outbuffer;
 			outbuffer.format = global.hrtf_format;
 			outbuffer.numSamples = sampleframes;
-			outbuffer.interleavedBuffer = output_buffer;
+			outbuffer.deinterleavedBuffer = output_buffers;
 			iplApplyBinauralEffect(binaural,
 								   inbuffer,
 								   *(IPLVector3 *)(&dirn.x),
@@ -726,13 +743,14 @@ struct VRMSP_hrtf {
 		
 		// copy output:
 		{
-			IPLfloat32 * src = output_buffer;
+			IPLfloat32 * src0 = output_buffers[0];
+			IPLfloat32 * src1 = output_buffers[1];
 			t_double * dst0 = outs[0];
 			t_double * dst1 = outs[1];
 			int n = sampleframes;
 			while (n--) {
-				*dst0++ = *src++;
-				*dst1++ = *src++;
+				*dst0++ = *src0++;
+				*dst1++ = *src1++;
 			}
 		}
 	}
@@ -779,6 +797,7 @@ struct VRMSP_hrtf {
 		CLASS_ATTR_LONG(c, "interp", 0, VRMSP_hrtf, interp);
 		CLASS_ATTR_STYLE(c, "interp", 0, "onoff");
 		CLASS_ATTR_FLOAT_ARRAY(c, "direction", 0, VRMSP_hrtf, direction, 3);
+		CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VRMSP_hrtf, quat, 4);
 		
 		class_dspinit(c);
 		class_register(CLASS_BOX, c);
