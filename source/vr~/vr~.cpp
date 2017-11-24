@@ -685,7 +685,7 @@ struct VRMSP_hrtf {
 		cleanup();
 		global.setup(samplerate, framesize);
 		
-		object_post((t_object *)this, "dsp %f %d interp %d", samplerate, framesize, interp);
+		//object_post((t_object *)this, "dsp %f %d interp %d", samplerate, framesize, interp);
 		
 		// create binaural effect:
 		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural);
