@@ -381,6 +381,7 @@ struct VRMSP_Global {
  }
  */
 
+/*
 struct VRMSP_ambi2hrtf {
 	t_pxobject ob;
 	// attrs:
@@ -450,7 +451,7 @@ struct VRMSP_ambi2hrtf {
 		cleanup();
 		
 		// create binaural effect:
-		/*
+ 
 		 switch (channelorder) {
 			case 1: input_format.ambisonicsOrdering = IPL_AMBISONICSORDERING_ACN; break;
 			default: input_format.ambisonicsOrdering = IPL_AMBISONICSORDERING_FURSEMALHAM; break;
@@ -460,8 +461,7 @@ struct VRMSP_ambi2hrtf {
 			case 1: input_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_SN3D; break;
 			default: input_format.ambisonicsNormalization = IPL_AMBISONICSNORMALIZATION_N3D; break;
 		 }
-		 */
-		
+ 
 		if (IPL_STATUS_SUCCESS != iplCreateAmbisonicsBinauralEffect(global.binaural_renderer,
 																	ambisonic_format,
 																	global.hrtf_format,
@@ -498,7 +498,7 @@ struct VRMSP_ambi2hrtf {
 			}
 		}
 		
-		/*
+ 
 		 // The steam audio implementation doesn't seem to work at all
 		 // see https://github.com/ValveSoftware/steam-audio/issues/38
 		 
@@ -549,7 +549,7 @@ struct VRMSP_ambi2hrtf {
 			}
 		 }
 		 orientation_prev = orientation;
-		 */
+ 
 		
 		IPLAudioBuffer outbuffer;
 		outbuffer.format = global.hrtf_format;
@@ -625,6 +625,7 @@ struct VRMSP_ambi2hrtf {
 	}
 	
 };
+*/
 
 
 static t_class * VRMSP_hrtf_class = 0;
@@ -637,15 +638,24 @@ struct VRMSP_hrtf {
 	glm::vec3 direction;
 	glm::quat quat; // the listener's head orientation
 	
+	// internal
 	IPLhandle binaural = 0;
+	IPLhandle binaural1 = 0;
 	IPLfloat32 * source_buffers[1];
-	IPLfloat32 * output_buffers[2];
+	IPLfloat32 * output_buffers0[2];
+	IPLfloat32 * output_buffers1[2];
+	glm::vec3 dirn0;
+	glm::vec3 dirn1;
+	IPLfloat32 xinc = 1./2048.;
+	IPLfloat32 xfade = 0;
 	
 	VRMSP_hrtf() {
 		// pre-allocated to maximum vector size, in case this is cheaper?
 		source_buffers[0] = new float[4096];
-		output_buffers[0] = new float[4096];
-		output_buffers[1] = new float[4096];
+		output_buffers0[0] = new float[4096];
+		output_buffers0[1] = new float[4096];
+		output_buffers1[0] = new float[4096];
+		output_buffers1[1] = new float[4096];
 		
 		// mono input:
 		dsp_setup(&ob, 1);
@@ -654,7 +664,7 @@ struct VRMSP_hrtf {
 		outlet_new(&ob, "signal");
 		
 		// attr defaults:
-		interp = 1;
+		interp = 0;
 		// default position in front of listener, to avoid 0,0,0
 		direction.x = 0;
 		direction.y = 0;
@@ -671,12 +681,15 @@ struct VRMSP_hrtf {
 		cleanup();
 		
 		delete[] source_buffers[0];
-		delete[] output_buffers[0];
-		delete[] output_buffers[1];
+		delete[] output_buffers0[0];
+		delete[] output_buffers0[1];
+		delete[] output_buffers1[0];
+		delete[] output_buffers1[1];
 	}
 	
 	void cleanup() {
 		if (binaural) iplDestroyBinauralEffect(&binaural);
+		if (binaural1) iplDestroyBinauralEffect(&binaural1);
 	}
 	
 	void dsp64(t_object *dsp64, short *count, double samplerate, long framesize, long flags) {
@@ -689,6 +702,7 @@ struct VRMSP_hrtf {
 		
 		// create binaural effect:
 		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural);
+		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural1);
 		
 		// connect to MSP dsp chain:
 		long options = 0;
@@ -698,10 +712,15 @@ struct VRMSP_hrtf {
 	void perform64(t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags) {
 		
 		// phonon uses float32 processing, so we need to copy :-(
-		IPLAudioBuffer outbuffer;
-		outbuffer.format = global.hrtf_format;
-		outbuffer.numSamples = sampleframes;
-		outbuffer.deinterleavedBuffer = output_buffers;
+		IPLAudioBuffer outbuffer0;
+		outbuffer0.format = global.hrtf_format;
+		outbuffer0.numSamples = sampleframes;
+		outbuffer0.deinterleavedBuffer = output_buffers0;
+		
+		IPLAudioBuffer outbuffer1;
+		outbuffer1.format = global.hrtf_format;
+		outbuffer1.numSamples = sampleframes;
+		outbuffer1.deinterleavedBuffer = output_buffers1;
 		
 		IPLAudioBuffer inbuffer;
 		inbuffer.format = global.mono_format;
@@ -730,28 +749,48 @@ struct VRMSP_hrtf {
 		// BUT Must use IPL_HRTFINTERPOLATION_BILINEAR if using a custom HRTF
 		
 		{
-			IPLAudioBuffer outbuffer;
-			outbuffer.format = global.hrtf_format;
-			outbuffer.numSamples = sampleframes;
-			outbuffer.deinterleavedBuffer = output_buffers;
 			iplApplyBinauralEffect(binaural,
 								   inbuffer,
-								   *(IPLVector3 *)(&dirn.x),
+								   *(IPLVector3 *)(&dirn0.x),
 								   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
-								   outbuffer);
+								   outbuffer0);
+			if (1) {// if smoothed:
+				iplApplyBinauralEffect(binaural1,
+									   inbuffer,
+									   *(IPLVector3 *)(&dirn1.x),
+									   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
+									   outbuffer1);
+			}
 		}
+		
+		
 		
 		// copy output:
 		{
-			IPLfloat32 * src0 = output_buffers[0];
-			IPLfloat32 * src1 = output_buffers[1];
+			IPLfloat32 * src00 = output_buffers0[0];
+			IPLfloat32 * src01 = output_buffers0[1];
+			IPLfloat32 * src10 = output_buffers1[0];
+			IPLfloat32 * src11 = output_buffers1[1];
 			t_double * dst0 = outs[0];
 			t_double * dst1 = outs[1];
 			int n = sampleframes;
+			
 			while (n--) {
-				*dst0++ = *src0++;
-				*dst1++ = *src1++;
+				// crossfade:
+				IPLfloat32 s00 = *src00++;
+				IPLfloat32 s01 = *src01++;
+				IPLfloat32 s10 = *src10++;
+				IPLfloat32 s11 = *src11++;
+				*dst0++ = s00 + xfade*(s10 - s00);
+				*dst1++ = s01 + xfade*(s11 - s01);
+				xfade += xinc;
+				if (xfade >= 1.) {
+					xfade = 0;
+					dirn0 = dirn1;
+					dirn1 = dirn;
+				}
 			}
+			
 		}
 	}
 	
@@ -812,5 +851,5 @@ struct VRMSP_hrtf {
 extern "C" C74_EXPORT void ext_main(void *r) {
 	
 	VRMSP_hrtf::static_init();
-	VRMSP_ambi2hrtf::static_init();
+	//VRMSP_ambi2hrtf::static_init();
 }

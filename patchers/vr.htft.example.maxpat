@@ -9,7 +9,7 @@
 			"modernui" : 1
 		}
 ,
-		"rect" : [ 294.0, 137.0, 1152.0, 602.0 ],
+		"rect" : [ 189.0, 79.0, 1152.0, 602.0 ],
 		"bglocked" : 0,
 		"openinpresentation" : 0,
 		"default_fontsize" : 12.0,
@@ -37,6 +37,47 @@
 		"style" : "",
 		"subpatcher_template" : "",
 		"boxes" : [ 			{
+				"box" : 				{
+					"id" : "obj-17",
+					"linecount" : 12,
+					"maxclass" : "comment",
+					"numinlets" : 1,
+					"numoutlets" : 0,
+					"patching_rect" : [ 543.5, 382.0, 506.0, 167.0 ],
+					"style" : "",
+					"text" : "TODOs:\n- I can hear small jumps between hrtf bins. interpolating direction vector is only updated once per vs (and maybe under the hood less than that?), but interp could still be achieved by generating two binaural outputs and xfading them.\n- support signal-driven direction input\n- find a way to 'group' vr~ objects so that listener pose can be shared\n- abstraction to add more features & spatial cues:\n- mix to global receives~, and global reverb\n- basic distance cue example\n- handle near-field/inside head effects; at minimum, avoid click when passing through head, by xfading through a mono signal at head size\n- compute left & right ear relative positions separately (is it better?)\n"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"id" : "obj-6",
+					"maxclass" : "newobj",
+					"numinlets" : 2,
+					"numoutlets" : 1,
+					"outlettype" : [ "signal" ],
+					"patching_rect" : [ 549.0, 121.0, 48.0, 22.0 ],
+					"style" : "",
+					"text" : "+~ 220"
+				}
+
+			}
+, 			{
+				"box" : 				{
+					"fontface" : 0,
+					"fontname" : "Arial",
+					"fontsize" : 12.0,
+					"id" : "obj-36",
+					"maxclass" : "jit.fpsgui",
+					"numinlets" : 1,
+					"numoutlets" : 2,
+					"outlettype" : [ "", "" ],
+					"patching_rect" : [ 77.0, 98.0, 80.0, 35.0 ],
+					"style" : ""
+				}
+
+			}
+, 			{
 				"box" : 				{
 					"id" : "obj-35",
 					"maxclass" : "newobj",
@@ -72,7 +113,6 @@
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
 					"patching_rect" : [ 880.0, 31.0, 50.0, 22.0 ],
-					"presentation_rect" : [ 880.0, 31.0, 0.0, 0.0 ],
 					"style" : ""
 				}
 
@@ -87,7 +127,6 @@
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
 					"patching_rect" : [ 801.0, 31.0, 50.0, 22.0 ],
-					"presentation_rect" : [ 801.0, 31.0, 0.0, 0.0 ],
 					"style" : ""
 				}
 
@@ -102,7 +141,6 @@
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
 					"patching_rect" : [ 729.0, 31.0, 50.0, 22.0 ],
-					"presentation_rect" : [ 729.0, 31.0, 0.0, 0.0 ],
 					"style" : ""
 				}
 
@@ -126,7 +164,7 @@
 					"maxclass" : "ezdac~",
 					"numinlets" : 2,
 					"numoutlets" : 0,
-					"patching_rect" : [ 234.0, 403.0, 45.0, 45.0 ],
+					"patching_rect" : [ 346.0, 346.0, 45.0, 45.0 ],
 					"style" : ""
 				}
 
@@ -180,7 +218,6 @@
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
 					"patching_rect" : [ 430.0, 171.0, 50.0, 22.0 ],
-					"presentation_rect" : [ 430.0, 171.0, 0.0, 0.0 ],
 					"style" : ""
 				}
 
@@ -193,7 +230,6 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "float" ],
 					"patching_rect" : [ 422.0, 134.0, 66.0, 22.0 ],
-					"presentation_rect" : [ 422.0, 134.0, 0.0, 0.0 ],
 					"style" : "",
 					"text" : "snapshot~"
 				}
@@ -209,7 +245,6 @@
 					"outlettype" : [ "", "bang" ],
 					"parameter_enable" : 0,
 					"patching_rect" : [ 351.0, 171.0, 50.0, 22.0 ],
-					"presentation_rect" : [ 376.0, 171.0, 0.0, 0.0 ],
 					"style" : ""
 				}
 
@@ -222,7 +257,6 @@
 					"numoutlets" : 1,
 					"outlettype" : [ "float" ],
 					"patching_rect" : [ 343.0, 134.0, 66.0, 22.0 ],
-					"presentation_rect" : [ 368.0, 134.0, 0.0, 0.0 ],
 					"style" : "",
 					"text" : "snapshot~"
 				}
@@ -479,50 +513,14 @@
 			}
 , 			{
 				"box" : 				{
-					"id" : "obj-6",
-					"maxclass" : "spectroscope~",
-					"numinlets" : 2,
-					"numoutlets" : 1,
-					"outlettype" : [ "" ],
-					"patching_rect" : [ 621.0, 382.0, 300.0, 100.0 ],
-					"style" : ""
-				}
-
-			}
-, 			{
-				"box" : 				{
-					"id" : "obj-5",
-					"maxclass" : "spectroscope~",
-					"numinlets" : 2,
-					"numoutlets" : 1,
-					"outlettype" : [ "" ],
-					"patching_rect" : [ 311.0, 487.0, 300.0, 100.0 ],
-					"style" : ""
-				}
-
-			}
-, 			{
-				"box" : 				{
-					"id" : "obj-4",
-					"maxclass" : "spectroscope~",
-					"numinlets" : 2,
-					"numoutlets" : 1,
-					"outlettype" : [ "" ],
-					"patching_rect" : [ 311.0, 382.0, 300.0, 100.0 ],
-					"style" : ""
-				}
-
-			}
-, 			{
-				"box" : 				{
 					"id" : "obj-3",
 					"maxclass" : "newobj",
-					"numinlets" : 1,
+					"numinlets" : 2,
 					"numoutlets" : 1,
 					"outlettype" : [ "signal" ],
-					"patching_rect" : [ 655.0, 117.0, 46.0, 22.0 ],
+					"patching_rect" : [ 549.0, 149.0, 68.0, 22.0 ],
 					"style" : "",
-					"text" : "noise~"
+					"text" : "cycle~ 220"
 				}
 
 			}
@@ -651,7 +649,6 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-28", 1 ],
-					"order" : 1,
 					"source" : [ "obj-2", 1 ]
 				}
 
@@ -659,24 +656,7 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-28", 0 ],
-					"order" : 1,
 					"source" : [ "obj-2", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-4", 0 ],
-					"order" : 0,
-					"source" : [ "obj-2", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-5", 0 ],
-					"order" : 0,
-					"source" : [ "obj-2", 1 ]
 				}
 
 			}
@@ -734,15 +714,6 @@
 , 			{
 				"patchline" : 				{
 					"destination" : [ "obj-2", 0 ],
-					"order" : 1,
-					"source" : [ "obj-3", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-6", 0 ],
-					"order" : 0,
 					"source" : [ "obj-3", 0 ]
 				}
 
@@ -784,6 +755,13 @@
 			}
 , 			{
 				"patchline" : 				{
+					"destination" : [ "obj-3", 0 ],
+					"source" : [ "obj-6", 0 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
 					"destination" : [ "obj-10", 0 ],
 					"order" : 0,
 					"source" : [ "obj-7", 0 ]
@@ -818,6 +796,14 @@
 				"patchline" : 				{
 					"destination" : [ "obj-21", 0 ],
 					"order" : 0,
+					"source" : [ "obj-9", 1 ]
+				}
+
+			}
+, 			{
+				"patchline" : 				{
+					"destination" : [ "obj-36", 0 ],
+					"order" : 3,
 					"source" : [ "obj-9", 1 ]
 				}
 
@@ -886,8 +872,8 @@
 , 			{
 				"name" : "newobjYellow-1",
 				"default" : 				{
-					"fontsize" : [ 12.059008 ],
-					"accentcolor" : [ 0.82517, 0.78181, 0.059545, 1.0 ]
+					"accentcolor" : [ 0.82517, 0.78181, 0.059545, 1.0 ],
+					"fontsize" : [ 12.059008 ]
 				}
 ,
 				"parentstyle" : "",
@@ -896,8 +882,8 @@
 , 			{
 				"name" : "newobjYellow-2",
 				"default" : 				{
-					"fontsize" : [ 12.059008 ],
-					"accentcolor" : [ 0.82517, 0.78181, 0.059545, 1.0 ]
+					"accentcolor" : [ 0.82517, 0.78181, 0.059545, 1.0 ],
+					"fontsize" : [ 12.059008 ]
 				}
 ,
 				"parentstyle" : "",
