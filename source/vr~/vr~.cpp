@@ -1,23 +1,4 @@
-// see https://cycling74.com/forums/topic/error-126-loading-external/#.WIvJXhsrKHs
-#define MAXAPI_USE_MSCRT
-
-// a bunch of likely Max includes:
-extern "C" {
-#include "ext.h"
-#include "ext_obex.h"
-#include "ext_dictionary.h"
-#include "ext_dictobj.h"
-#include "ext_systhread.h"
-	
-#include "z_dsp.h"
-	
-#include "jit.common.h"
-#include "jit.vecmath.h"
-#include "jit.gl.h"
-#include "max.jit.mop.h"
-}
-
-#include "al_math.h"
+#include "vr~.h"
 
 /*
  
@@ -85,18 +66,13 @@ extern "C" {
  and also goes through a convolution mixer to an ambisonics bus that is decoded to hrtf or speaker layout
  docs also suggest mixing all sources into another convolution located at the listener position
  (i.e. all sources go into two reverbs)
- 
  */
-#include "steamaudio_api/include/phonon.h"
-
-#include <new> // for in-place constructor
-#include <vector>
 
 static t_class * static_hrtf_class = 0;
 static t_class * static_ambi2hrtf_class = 0;
 
 // Static state (shared by all):
-struct VRMSP_Global {
+struct VR_Phonon_Global {
 	
 	IPLContext context;
 	IPLRenderingSettings settings;
@@ -114,7 +90,26 @@ struct VRMSP_Global {
 	IPLhandle environment = 0;
 	IPLhandle environmental_renderer = 0;
 	
-	VRMSP_Global() {
+	// attr
+	glm::vec3 position, position1;
+	glm::quat quat; // the listener's head orientation
+	float head_radius;
+	
+	
+	VR_Phonon_Global() {
+		
+		head_radius = 0.1075; // per https://en.wikipedia.org/wiki/Sound_localization
+		
+		// default position
+		position.x = 0.;
+		position.y = 1.6;
+		position.z = 0;
+		
+		// default orientation has no transform:
+		quat.x = 0;
+		quat.y = 0;
+		quat.z = 0;
+		quat.w = 1;
 		
 		// TODO: consider mapping to sysmem handers?
 		context.allocateCallback = 0;
@@ -150,7 +145,7 @@ struct VRMSP_Global {
 		simulationSettings.maxConvolutionSources = 32; // max no. of sound sources
 	}
 	
-	~VRMSP_Global() {
+	~VR_Phonon_Global() {
 		cleanup();
 	}
 	
@@ -322,6 +317,380 @@ struct VRMSP_Global {
 	
 } global;
 
+static t_class * VR_Phonon_class = 0;
+
+struct VR_Phonon {
+	t_pxobject ob;
+	void * outlet_msg;
+	
+	VR_Phonon() {
+		outlet_msg = outlet_new(&ob, 0);
+	}
+	
+	~VR_Phonon() {
+		cleanup();
+		
+	}
+	
+	void cleanup() {
+		
+	}
+	
+	void output_ear() {
+		t_atom a[3];
+		glm::vec3 ear = quat_ux(global.quat) * global.head_radius;
+		atom_setfloat(a + 0, ear.x);
+		atom_setfloat(a + 1, ear.y);
+		atom_setfloat(a + 2, ear.z);
+		outlet_anything(outlet_msg, gensym("ear"), 3, a);
+	}
+	
+	void dsp64(t_object *dsp64, short *count, double samplerate, long framesize, long flags) {
+		
+		// reset:
+		cleanup();
+		global.setup(samplerate, framesize);
+		
+		//object_post((t_object *)this, "dsp %f %d interp %d", samplerate, framesize, interp);
+		
+		
+	}
+	
+	static void * create(t_symbol *s, long argc, t_atom *argv) {
+		VR_Phonon *x = NULL;
+		if ((x = (VR_Phonon *)object_alloc(VR_Phonon_class))) {
+			x = new (x) VR_Phonon;
+			attr_args_process(x, (short)argc, argv);
+		}
+		return (x);
+	}
+	
+	static void destroy(VR_Phonon *x) {
+		x->~VR_Phonon();
+	}
+	
+	// registers a function for the signal chain in Max
+	static void static_dsp64(VR_Phonon *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags) {
+		x->dsp64(dsp64, count, samplerate, maxvectorsize, flags);
+	}
+	
+	static void static_assist(VR_Phonon *x, void *b, long m, long a, char *s) {
+		if (m == ASSIST_INLET) {
+			sprintf(s, "source (signal)");
+		} else {
+			switch(a) {
+				case 0: sprintf(s, "headphone left (signal)"); break;
+				case 1: sprintf(s, "headphone right (signal)"); break;
+			}
+		}
+	}
+	
+	static t_max_err position_get(VR_Phonon * o, t_object *attr, long *argc, t_atom **argv) {
+		char alloc;
+		// make sure there are enough atoms in the return value:
+		atom_alloc_array(3, argc, argv, &alloc);
+		atom_setfloat((*argv) + 0, global.position.x);
+		atom_setfloat((*argv) + 1, global.position.y);
+		atom_setfloat((*argv) + 2, global.position.z);
+		return 0;
+	};
+	static t_max_err position_set(VR_Phonon * o, t_object *attr, long argc, t_atom *argv) {
+		if (argc < 3) {
+			object_error((t_object *)o, "position requires 3 floats");
+			return MAX_ERR_GENERIC;
+		} else {
+			global.position.x = atom_getfloat(argv+0);
+			global.position.y = atom_getfloat(argv+1);
+			global.position.z = atom_getfloat(argv+2);
+			// output the ear vector:
+			o->output_ear();
+			return MAX_ERR_NONE;
+		}
+	};
+	
+	static t_max_err quat_get(VR_Phonon * o, t_object *attr, long *argc, t_atom **argv) {
+		char alloc;
+		// make sure there are enough atoms in the return value:
+		atom_alloc_array(4, argc, argv, &alloc);
+		atom_setfloat((*argv) + 0, global.quat.x);
+		atom_setfloat((*argv) + 1, global.quat.y);
+		atom_setfloat((*argv) + 2, global.quat.z);
+		atom_setfloat((*argv) + 3, global.quat.w);
+		// output the ear vector:
+		o->output_ear();
+		return 0;
+	};
+	static t_max_err quat_set(VR_Phonon * o, t_object *attr, long argc, t_atom *argv) {
+		if (argc < 4) {
+			object_error((t_object *)o, "quat requires  4 floats");
+			return MAX_ERR_GENERIC;
+		} else {
+			global.quat.x = atom_getfloat(argv+0);
+			global.quat.y = atom_getfloat(argv+1);
+			global.quat.z = atom_getfloat(argv+2);
+			global.quat.w = atom_getfloat(argv+3);
+			return MAX_ERR_NONE;
+		}
+	};
+	
+	static void static_init() {
+		t_class * c = class_new("vr.phonon~", (method)create, (method)destroy, (long)sizeof(VR_Phonon), 0L, A_GIMME, 0);
+		
+		class_addmethod(c, (method)static_assist, "assist", A_CANT, 0);
+		class_addmethod(c, (method)static_dsp64, "dsp64", A_CANT, 0);
+		
+		CLASS_ATTR_FLOAT_ARRAY(c, "position", 0, VR_Phonon, ob, 3);
+		CLASS_ATTR_ACCESSORS(c, "position", position_get, position_set);
+		
+		CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VR_Phonon, ob, 4);
+		CLASS_ATTR_ACCESSORS(c, "quat", quat_get, quat_set);
+		
+		class_dspinit(c);
+		class_register(CLASS_BOX, c);
+		VR_Phonon_class = c;
+	}
+};
+
+
+static t_class * VR_Phonon_hrtf_class = 0;
+
+struct VR_Phonon_hrtf {
+	t_pxobject ob;
+	
+	// attr
+	t_atom_long interp;		// interpolate positions over time
+	t_atom_long interaural; // compute direction etc. for each ear location separately (requires two binaural renderers)
+	glm::vec3 position;
+	//glm::quat quat; // only important if we start simulating radiation patterns
+	
+	// internal
+	IPLhandle binaural = 0;
+	IPLhandle binaural2 = 0;
+	IPLfloat32 * source_buffers[1];
+	IPLfloat32 * output_buffers[2];
+	IPLfloat32 * source_buffers2[1];
+	IPLfloat32 * output_buffers2[2];
+	
+	int position_signal = 0;
+	
+	
+	VR_Phonon_hrtf() {
+		// pre-allocated to maximum vector size, in case this is cheaper?
+		source_buffers[0] = new float[4096];
+		output_buffers[0] = new float[4096];
+		output_buffers[1] = new float[4096];
+		output_buffers2[0] = new float[4096];
+		output_buffers2[1] = new float[4096];
+		
+		// input signals:
+		dsp_setup(&ob, 4);
+		// stereo output:
+		outlet_new(&ob, "signal");
+		outlet_new(&ob, "signal");
+		// two more outlets for distance signals:
+		outlet_new(&ob, "signal");
+		outlet_new(&ob, "signal");
+		
+		// attr defaults:
+		interp = 1;
+		interaural = 1;
+		// default position in front of listener, to avoid 0,0,0
+		position.x = 0;
+		position.y = 0;
+		position.z = -1;
+		
+		// default orientation has no transform:
+		//quat.x = 0;
+		//quat.y = 0;
+		//quat.z = 0;
+		//quat.w = 1;
+	}
+	
+	~VR_Phonon_hrtf() {
+		cleanup();
+		
+		delete[] source_buffers[0];
+		delete[] output_buffers[0];
+		delete[] output_buffers[1];
+		delete[] output_buffers2[0];
+		delete[] output_buffers2[1];
+	}
+	
+	void cleanup() {
+		if (binaural) iplDestroyBinauralEffect(&binaural);
+		if (binaural2) iplDestroyBinauralEffect(&binaural2);
+	}
+	
+	void dsp64(t_object *dsp64, short *count, double samplerate, long framesize, long flags) {
+		
+		// reset:
+		cleanup();
+		global.setup(samplerate, framesize);
+		
+		//object_post((t_object *)this, "dsp %f %d interp %d", samplerate, framesize, interp);
+		
+		// create binaural effect:
+		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural);
+		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural2);
+		
+		// note whetehr position data is audio rate or not:
+		position_signal = count[1] && count[2] && count[3];
+		//post("sign %d", position_signal);
+		
+		// connect to MSP dsp chain:
+		long options = 0;
+		object_method(dsp64, gensym("dsp_add64"), this, static_perform64, options, 0);
+	}
+	
+	void perform64(t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags) {
+		
+		// phonon uses float32 processing, so we need to copy :-(
+		IPLAudioBuffer outbuffer;
+		outbuffer.format = global.hrtf_format;
+		outbuffer.numSamples = sampleframes;
+		outbuffer.deinterleavedBuffer = output_buffers;
+		
+		IPLAudioBuffer outbuffer2;
+		outbuffer2.format = global.hrtf_format;
+		outbuffer2.numSamples = sampleframes;
+		outbuffer2.deinterleavedBuffer = output_buffers2;
+		
+		IPLAudioBuffer inbuffer;
+		inbuffer.format = global.mono_format;
+		inbuffer.numSamples = sampleframes;
+		inbuffer.deinterleavedBuffer = source_buffers;
+		
+		// copy input:
+		{
+			t_double * src = ins[0];
+			IPLfloat32 * dst = source_buffers[0];
+			int n = sampleframes;
+			while (n--) { *dst++ = *src++; }
+		}
+		
+		// if position is being set by audio signals, grab them here:
+		if (position_signal) {
+			position.x = *(ins[1]);
+			position.y = *(ins[2]);
+			position.z = *(ins[3]);
+		}
+	
+		glm::vec3 dirn_l, dirn_r;
+		float distance_l, distance_r;
+		if (interaural) {
+			glm::vec3 ear = quat_ux(global.quat) * global.head_radius;
+			glm::vec3 rel_l = position - (global.position - ear);
+			glm::vec3 rel_r = position - (global.position + ear);
+			glm::vec3 dir_l = quat_unrotate(global.quat, rel_l);
+			glm::vec3 dir_r = quat_unrotate(global.quat, rel_r);
+			distance_l = glm::length(rel_l);
+			distance_r = glm::length(rel_r);
+			// TODO: handle cases where distance is close to zero (where there's no direction in particular)
+			dirn_l = glm::normalize(dir_l);
+			dirn_r = glm::normalize(dir_r);
+		} else {
+			glm::vec3 rel_l = position - (global.position);
+			glm::vec3 dir_l = quat_unrotate(global.quat, rel_l);
+			distance_l = glm::length(rel_l);
+			distance_r = distance_l;
+			// TODO: handle cases where distance is close to zero (where there's no direction in particular)
+			dirn_l = glm::normalize(dir_l);
+		}
+			
+		
+		// Note:
+		// IPL_HRTFINTERPOLATION_BILINEAR has high CPU cost
+		// Typically, bilinear filtering is most useful for wide-band noise-like sounds, such as radio static, mechanical noise, fire, etc.
+		// BUT Must use IPL_HRTFINTERPOLATION_BILINEAR if using a custom HRTF
+		
+		iplApplyBinauralEffect(binaural,
+							   inbuffer,
+							   *(IPLVector3 *)(&dirn_l.x),
+							   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
+							   outbuffer);
+		
+		if (interaural) {
+			iplApplyBinauralEffect(binaural2,
+								   inbuffer,
+								   *(IPLVector3 *)(&dirn_r.x),
+								   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
+								   outbuffer2);
+		}
+		
+		// copy output:
+		{
+			IPLfloat32 * src00 = output_buffers[0];
+			IPLfloat32 * src01 = interaural ? output_buffers2[1] : output_buffers[1];
+			t_double * dst0 = outs[0];
+			t_double * dst1 = outs[1];
+			t_double * dst2 = outs[2];
+			t_double * dst3 = outs[3];
+			int n = sampleframes;
+			while (n--) {
+				*dst0++ = *src00++;
+				*dst1++ = *src01++;
+				// maybe we should ramp this?
+				*dst2++ = distance_l;
+				*dst3++ = distance_r;
+			}
+		}
+	}
+	
+	static void * create(t_symbol *s, long argc, t_atom *argv) {
+		VR_Phonon_hrtf *x = NULL;
+		if ((x = (VR_Phonon_hrtf *)object_alloc(VR_Phonon_hrtf_class))) {
+			x = new (x) VR_Phonon_hrtf;
+			attr_args_process(x, (short)argc, argv);
+		}
+		return (x);
+	}
+	
+	static void destroy(VR_Phonon_hrtf *x) {
+		x->~VR_Phonon_hrtf();
+	}
+	
+	// registers a function for the signal chain in Max
+	static void static_dsp64(VR_Phonon_hrtf *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags) {
+		x->dsp64(dsp64, count, samplerate, maxvectorsize, flags);
+	}
+	
+	static void static_perform64(VR_Phonon_hrtf *x, t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags, void *userparam) {
+		x->perform64(dsp64, ins, numins, outs, numouts, sampleframes, flags);
+	}
+	
+	static void static_assist(VR_Phonon_hrtf *x, void *b, long m, long a, char *s) {
+		if (m == ASSIST_INLET) {
+			sprintf(s, "source (signal)");
+		} else {
+			switch(a) {
+				case 0: sprintf(s, "headphone left (signal)"); break;
+				case 1: sprintf(s, "headphone right (signal)"); break;
+			}
+		}
+	}
+	
+	static void static_init() {
+		t_class * c = class_new("vr.phonon.hrtf~", (method)VR_Phonon_hrtf::create, (method)VR_Phonon_hrtf::destroy, (long)sizeof(VR_Phonon_hrtf), 0L, A_GIMME, 0);
+		
+		class_addmethod(c, (method)VR_Phonon_hrtf::static_assist, "assist", A_CANT, 0);
+		class_addmethod(c, (method)VR_Phonon_hrtf::static_dsp64, "dsp64", A_CANT, 0);
+		
+		CLASS_ATTR_LONG(c, "interp", 0, VR_Phonon_hrtf, interp);
+		CLASS_ATTR_STYLE(c, "interp", 0, "onoff");
+		
+		CLASS_ATTR_LONG(c, "interaural", 0, VR_Phonon_hrtf, interaural);
+		CLASS_ATTR_STYLE(c, "interaural", 0, "onoff");
+		
+		CLASS_ATTR_FLOAT_ARRAY(c, "position", 0, VR_Phonon_hrtf, position, 3);
+		//CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VR_Phonon_hrtf, quat, 4);
+		
+		class_dspinit(c);
+		class_register(CLASS_BOX, c);
+		VR_Phonon_hrtf_class = c;
+	}
+};
+
+
 /*
  
  void conv() {
@@ -382,7 +751,7 @@ struct VRMSP_Global {
  */
 
 /*
-struct VRMSP_ambi2hrtf {
+struct VR_Phonon_ambi2hrtf {
 	t_pxobject ob;
 	// attrs:
 	//t_atom_long normalization = 0;
@@ -398,7 +767,7 @@ struct VRMSP_ambi2hrtf {
 	IPLfloat32 * ambi_buffers[16];
 	IPLfloat32 * output_buffers[2];
 	
-	VRMSP_ambi2hrtf() {
+	VR_Phonon_ambi2hrtf() {
 		// according to https://github.com/ValveSoftware/steam-audio/issues/38
 		// the only supported combination is IPL_CHANNELORDER_DEINTERLEAVED,
 		// IPL_AMBISONICSORDERING_ACN, and IPL_AMBISONICSNORMALIZATION_N3D for the input buffer
@@ -428,7 +797,7 @@ struct VRMSP_ambi2hrtf {
 		outlet_new(&ob, "signal");
 	}
 	
-	~VRMSP_ambi2hrtf() {
+	~VR_Phonon_ambi2hrtf() {
 		cleanup();
 		
 		for (int i=0; i<ambisonic_format.numSpeakers; i++) {
@@ -575,28 +944,28 @@ struct VRMSP_ambi2hrtf {
 	///////////////
 	
 	static void * static_new(t_symbol *s, long argc, t_atom *argv) {
-		VRMSP_ambi2hrtf *x = NULL;
-		if ((x = (VRMSP_ambi2hrtf *)object_alloc(static_ambi2hrtf_class))) {
-			x = new (x) VRMSP_ambi2hrtf();
+		VR_Phonon_ambi2hrtf *x = NULL;
+		if ((x = (VR_Phonon_ambi2hrtf *)object_alloc(static_ambi2hrtf_class))) {
+			x = new (x) VR_Phonon_ambi2hrtf();
 			attr_args_process(x, (short)argc, argv);
 		}
 		return (x);
 	}
 	
-	static void static_free(VRMSP_ambi2hrtf *x) {
-		x->~VRMSP_ambi2hrtf();
+	static void static_free(VR_Phonon_ambi2hrtf *x) {
+		x->~VR_Phonon_ambi2hrtf();
 	}
 	
 	// registers a function for the signal chain in Max
-	static void static_dsp64(VRMSP_ambi2hrtf *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags) {
+	static void static_dsp64(VR_Phonon_ambi2hrtf *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags) {
 		x->dsp64(dsp64, count, samplerate, maxvectorsize, flags);
 	}
 	
-	static void static_perform64(VRMSP_ambi2hrtf *x, t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags, void *userparam) {
+	static void static_perform64(VR_Phonon_ambi2hrtf *x, t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags, void *userparam) {
 		x->perform64(dsp64, ins, numins, outs, numouts, sampleframes, flags);
 	}
 	
-	static void static_assist(VRMSP_ambi2hrtf *x, void *b, long m, long a, char *s) {
+	static void static_assist(VR_Phonon_ambi2hrtf *x, void *b, long m, long a, char *s) {
 		if (m == ASSIST_INLET) {
 			sprintf(s, "ambisonic source (signal)");
 		} else {
@@ -608,16 +977,16 @@ struct VRMSP_ambi2hrtf {
 	}
 	
 	static void static_init() {
-		t_class * c = class_new("vr.ambi2hrtf~", (method)VRMSP_ambi2hrtf::static_new, (method)VRMSP_ambi2hrtf::static_free, (long)sizeof(VRMSP_ambi2hrtf), 0L, A_GIMME, 0);
-		class_addmethod(c, (method)VRMSP_ambi2hrtf::static_assist, "assist", A_CANT, 0);
-		class_addmethod(c, (method)VRMSP_ambi2hrtf::static_dsp64, "dsp64", A_CANT, 0);
+		t_class * c = class_new("vr.ambi2hrtf~", (method)VR_Phonon_ambi2hrtf::static_new, (method)VR_Phonon_ambi2hrtf::static_free, (long)sizeof(VR_Phonon_ambi2hrtf), 0L, A_GIMME, 0);
+		class_addmethod(c, (method)VR_Phonon_ambi2hrtf::static_assist, "assist", A_CANT, 0);
+		class_addmethod(c, (method)VR_Phonon_ambi2hrtf::static_dsp64, "dsp64", A_CANT, 0);
 		
-		//CLASS_ATTR_LONG(c, "normalization", 0, VRMSP_ambi2hrtf, normalization);
+		//CLASS_ATTR_LONG(c, "normalization", 0, VR_Phonon_ambi2hrtf, normalization);
 		//CLASS_ATTR_ENUMINDEX3(c, "normalization", 0, "n3d", "sn3d", "fuma");
-		//CLASS_ATTR_LONG(c, "channelorder", 0, VRMSP_ambi2hrtf, channelorder);
+		//CLASS_ATTR_LONG(c, "channelorder", 0, VR_Phonon_ambi2hrtf, channelorder);
 		//CLASS_ATTR_ENUMINDEX2(c, "channelorder", 0, "fuma", "acn");
 		
-		//CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VRMSP_ambi2hrtf, orientation, 4);
+		//CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VR_Phonon_ambi2hrtf, orientation, 4);
 		
 		class_register(CLASS_BOX, c);
 		class_dspinit(c);
@@ -628,228 +997,12 @@ struct VRMSP_ambi2hrtf {
 */
 
 
-static t_class * VRMSP_hrtf_class = 0;
-
-struct VRMSP_hrtf {
-	t_pxobject ob;
-	
-	// attr
-	t_atom_long interp;
-	glm::vec3 direction;
-	glm::quat quat; // the listener's head orientation
-	
-	// internal
-	IPLhandle binaural = 0;
-	IPLhandle binaural1 = 0;
-	IPLfloat32 * source_buffers[1];
-	IPLfloat32 * output_buffers0[2];
-	IPLfloat32 * output_buffers1[2];
-	glm::vec3 dirn0;
-	glm::vec3 dirn1;
-	IPLfloat32 xinc = 1./2048.;
-	IPLfloat32 xfade = 0;
-	
-	VRMSP_hrtf() {
-		// pre-allocated to maximum vector size, in case this is cheaper?
-		source_buffers[0] = new float[4096];
-		output_buffers0[0] = new float[4096];
-		output_buffers0[1] = new float[4096];
-		output_buffers1[0] = new float[4096];
-		output_buffers1[1] = new float[4096];
-		
-		// mono input:
-		dsp_setup(&ob, 1);
-		// stereo output:
-		outlet_new(&ob, "signal");
-		outlet_new(&ob, "signal");
-		
-		// attr defaults:
-		interp = 0;
-		// default position in front of listener, to avoid 0,0,0
-		direction.x = 0;
-		direction.y = 0;
-		direction.z = -1;
-		
-		// default orientation has no transform:
-		quat.x = 0;
-		quat.y = 0;
-		quat.z = 0;
-		quat.w = 1;
-	}
-	
-	~VRMSP_hrtf() {
-		cleanup();
-		
-		delete[] source_buffers[0];
-		delete[] output_buffers0[0];
-		delete[] output_buffers0[1];
-		delete[] output_buffers1[0];
-		delete[] output_buffers1[1];
-	}
-	
-	void cleanup() {
-		if (binaural) iplDestroyBinauralEffect(&binaural);
-		if (binaural1) iplDestroyBinauralEffect(&binaural1);
-	}
-	
-	void dsp64(t_object *dsp64, short *count, double samplerate, long framesize, long flags) {
-		
-		// reset:
-		cleanup();
-		global.setup(samplerate, framesize);
-		
-		//object_post((t_object *)this, "dsp %f %d interp %d", samplerate, framesize, interp);
-		
-		// create binaural effect:
-		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural);
-		iplCreateBinauralEffect(global.binaural_renderer, global.mono_format, global.hrtf_format, &binaural1);
-		
-		// connect to MSP dsp chain:
-		long options = 0;
-		object_method(dsp64, gensym("dsp_add64"), this, static_perform64, options, 0);
-	}
-	
-	void perform64(t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags) {
-		
-		// phonon uses float32 processing, so we need to copy :-(
-		IPLAudioBuffer outbuffer0;
-		outbuffer0.format = global.hrtf_format;
-		outbuffer0.numSamples = sampleframes;
-		outbuffer0.deinterleavedBuffer = output_buffers0;
-		
-		IPLAudioBuffer outbuffer1;
-		outbuffer1.format = global.hrtf_format;
-		outbuffer1.numSamples = sampleframes;
-		outbuffer1.deinterleavedBuffer = output_buffers1;
-		
-		IPLAudioBuffer inbuffer;
-		inbuffer.format = global.mono_format;
-		inbuffer.numSamples = sampleframes;
-		inbuffer.deinterleavedBuffer = source_buffers;
-		
-		// copy input:
-		{
-			t_double * src = ins[0];
-			IPLfloat32 * dst = source_buffers[0];
-			int n = sampleframes;
-			while (n--) { *dst++ = *src++; }
-		}
-		
-		// Unit vector from the listener to the point source,
-		// relative to the listener's coordinate system.
-		// TODO: apply head tracking quat transform to direction
-		glm::vec3 dirn = glm::normalize(direction);
-		
-		// rotate into head orientation:
-		dirn = quat_unrotate(quat, dirn); // quat_rotate or quat_unrotate?
-		
-		// Note:
-		// IPL_HRTFINTERPOLATION_BILINEAR has high CPU cost
-		// Typically, bilinear filtering is most useful for wide-band noise-like sounds, such as radio static, mechanical noise, fire, etc.
-		// BUT Must use IPL_HRTFINTERPOLATION_BILINEAR if using a custom HRTF
-		
-		{
-			iplApplyBinauralEffect(binaural,
-								   inbuffer,
-								   *(IPLVector3 *)(&dirn0.x),
-								   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
-								   outbuffer0);
-			if (1) {// if smoothed:
-				iplApplyBinauralEffect(binaural1,
-									   inbuffer,
-									   *(IPLVector3 *)(&dirn1.x),
-									   interp ? IPL_HRTFINTERPOLATION_BILINEAR : IPL_HRTFINTERPOLATION_NEAREST,
-									   outbuffer1);
-			}
-		}
-		
-		
-		
-		// copy output:
-		{
-			IPLfloat32 * src00 = output_buffers0[0];
-			IPLfloat32 * src01 = output_buffers0[1];
-			IPLfloat32 * src10 = output_buffers1[0];
-			IPLfloat32 * src11 = output_buffers1[1];
-			t_double * dst0 = outs[0];
-			t_double * dst1 = outs[1];
-			int n = sampleframes;
-			
-			while (n--) {
-				// crossfade:
-				IPLfloat32 s00 = *src00++;
-				IPLfloat32 s01 = *src01++;
-				IPLfloat32 s10 = *src10++;
-				IPLfloat32 s11 = *src11++;
-				*dst0++ = s00 + xfade*(s10 - s00);
-				*dst1++ = s01 + xfade*(s11 - s01);
-				xfade += xinc;
-				if (xfade >= 1.) {
-					xfade = 0;
-					dirn0 = dirn1;
-					dirn1 = dirn;
-				}
-			}
-			
-		}
-	}
-	
-	static void * create(t_symbol *s, long argc, t_atom *argv) {
-		VRMSP_hrtf *x = NULL;
-		if ((x = (VRMSP_hrtf *)object_alloc(VRMSP_hrtf_class))) {
-			x = new (x) VRMSP_hrtf;
-			attr_args_process(x, (short)argc, argv);
-		}
-		return (x);
-	}
-	
-	static void destroy(VRMSP_hrtf *x) {
-		x->~VRMSP_hrtf();
-	}
-	
-	// registers a function for the signal chain in Max
-	static void static_dsp64(VRMSP_hrtf *x, t_object *dsp64, short *count, double samplerate, long maxvectorsize, long flags) {
-		x->dsp64(dsp64, count, samplerate, maxvectorsize, flags);
-	}
-	
-	static void static_perform64(VRMSP_hrtf *x, t_object *dsp64, double **ins, long numins, double **outs, long numouts, long sampleframes, long flags, void *userparam) {
-		x->perform64(dsp64, ins, numins, outs, numouts, sampleframes, flags);
-	}
-	
-	static void static_assist(VRMSP_hrtf *x, void *b, long m, long a, char *s) {
-		if (m == ASSIST_INLET) {
-			sprintf(s, "source (signal)");
-		} else {
-			switch(a) {
-				case 0: sprintf(s, "headphone left (signal)"); break;
-				case 1: sprintf(s, "headphone right (signal)"); break;
-			}
-		}
-	}
-	
-	static void static_init() {
-		t_class * c = class_new("vr.hrtf~", (method)create, (method)destroy, (long)sizeof(VRMSP_hrtf), 0L, A_GIMME, 0);
-		
-		class_addmethod(c, (method)static_assist, "assist", A_CANT, 0);
-		class_addmethod(c, (method)static_dsp64, "dsp64", A_CANT, 0);
-		
-		CLASS_ATTR_LONG(c, "interp", 0, VRMSP_hrtf, interp);
-		CLASS_ATTR_STYLE(c, "interp", 0, "onoff");
-		CLASS_ATTR_FLOAT_ARRAY(c, "direction", 0, VRMSP_hrtf, direction, 3);
-		CLASS_ATTR_FLOAT_ARRAY(c, "quat", 0, VRMSP_hrtf, quat, 4);
-		
-		class_dspinit(c);
-		class_register(CLASS_BOX, c);
-		VRMSP_hrtf_class = c;
-	}
-};
-
 
 
 
 
 extern "C" C74_EXPORT void ext_main(void *r) {
 	
-	VRMSP_hrtf::static_init();
-	//VRMSP_ambi2hrtf::static_init();
+	VR_Phonon::static_init();
+	VR_Phonon_hrtf::static_init();
 }
