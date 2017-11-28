@@ -136,6 +136,8 @@
       <DataExecutionPrevention />
       <ImportLibrary>$(IntDir)$(ProjectName).lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
+      <AdditionalDependencies>MaxAPI.lib;MaxAudio.lib;jitlib.lib;phonon.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>steamaudio_api\lib\Windows\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -175,6 +177,8 @@
       <DataExecutionPrevention />
       <ImportLibrary>$(IntDir)$(ProjectName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
+      <AdditionalDependencies>MaxAPI.lib;MaxAudio.lib;jitlib.lib;phonon.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>steamaudio_api\lib\Windows\x64;$(C74SUPPORT)\max-includes\x64;$(C74SUPPORT)\msp-includes\x64;$(C74SUPPORT)\jit-includes\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -220,6 +224,8 @@
       <DataExecutionPrevention />
       <ImportLibrary>$(IntDir)$(ProjectName).lib</ImportLibrary>
       <TargetMachine>MachineX86</TargetMachine>
+      <AdditionalDependencies>MaxAPI.lib;MaxAudio.lib;jitlib.lib;phonon.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>steamaudio_api\lib\Windows\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -266,6 +272,8 @@
       <DataExecutionPrevention />
       <ImportLibrary>$(IntDir)$(ProjectName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
+      <AdditionalDependencies>MaxAPI.lib;MaxAudio.lib;jitlib.lib;phonon.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>steamaudio_api\lib\Windows\x64;$(C74SUPPORT)\max-includes\x64;$(C74SUPPORT)\msp-includes\x64;$(C74SUPPORT)\jit-includes\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
