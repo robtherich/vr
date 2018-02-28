@@ -13,7 +13,7 @@
 
 extern "C" {
 
-#define VR_DEBUG_POST(fmt, ...) do {} while (0)
+//#define VR_DEBUG_POST(fmt, ...) do {} while (0)
 #ifdef WIN_VERSION
 	// needed this for glFrameBuffer / GL_FRAMEBUFFER symbols
 	#include "jit.gl.procs.h"
@@ -1425,7 +1425,7 @@ struct Vr {
 
 			release_gpu_resources();
 
-			vr::VR_Shutdown();
+			//vr::VR_Shutdown();
 
 			steam.hmd = 0;
 		}
