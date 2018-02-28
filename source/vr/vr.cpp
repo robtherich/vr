@@ -23,7 +23,7 @@ extern "C" {
 	#define USE_STEAM_DRIVER 1
 
 	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__); } while (0)
-	//#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug line %d:%s(): " fmt, __LINE__, __func__, __VA_ARGS__); } while (0)
+	#define VR_DEBUG_POST(fmt, ...) do { object_post(0, "debug line %d:%s(): " fmt, __LINE__, __func__, __VA_ARGS__); } while (0)
 #else
 
 	// OSX:
@@ -1425,7 +1425,7 @@ struct Vr {
 
 			release_gpu_resources();
 
-			//vr::VR_Shutdown();
+			vr::VR_Shutdown();
 
 			steam.hmd = 0;
 		}
@@ -1947,7 +1947,7 @@ struct Vr {
 		}
 
 		uint32_t planes = nCameraFrameBufferSize / (steam.m_nCameraFrameWidth * steam.m_nCameraFrameHeight);
-		VR_DEBUG_POST(&ob, "video %i x %i, %i-plane", steam.m_nCameraFrameWidth, steam.m_nCameraFrameHeight, planes);
+		VR_DEBUG_POST("video %i x %i, %i-plane", steam.m_nCameraFrameWidth, steam.m_nCameraFrameHeight, planes);
 
 		if (dest_ready) steam_video_create_gpu_resources();
 
@@ -2009,7 +2009,7 @@ struct Vr {
 			steam.mCamera->ReleaseVideoStreamingService(steam.m_hTrackedCamera);
 			steam.m_hTrackedCamera = INVALID_TRACKED_CAMERA_HANDLE;
 			use_camera = 0;
-			VR_DEBUG_POST(&ob, "video stopped");
+			VR_DEBUG_POST("video stopped");
 		}
 	}
 
@@ -2017,7 +2017,7 @@ struct Vr {
 		if (!steam.hmd || !use_camera || !steam.mCamera || !steam.m_hTrackedCamera) return;
 
 
-		VR_DEBUG_POST(&ob, "video step");
+		VR_DEBUG_POST("video step");
 
 		// get the frame header only
 		vr::CameraVideoStreamFrameHeader_t frameHeader;
