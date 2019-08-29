@@ -29,7 +29,7 @@ extern "C" {
 	// OSX:
 	//#define USE_OCULUS_DRIVER 1
 	#define USE_STEAM_DRIVER 1
-
+	#define VR_DEBUG_POST
 #endif
 
 }
