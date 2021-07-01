@@ -2284,7 +2284,7 @@ void ext_main(void* r) {
 	class_addmethod(this_class, (method)vr_haptic, "vibrate", A_LONG, A_FLOAT, 0);
 
 	// vive only
-	CLASS_ATTR_LONG(this_class, "use_camera", 0, Vr, use_camera);
+	CLASS_ATTR_ATOM_LONG(this_class, "use_camera", 0, Vr, use_camera);
 	CLASS_ATTR_ENUMINDEX4(this_class, "use_camera", 0, "no video", "distorted", "undistorted", "undistorted_maximized");
 	CLASS_ATTR_ACCESSORS(this_class, "use_camera", NULL, vr_use_camera_set);
 
@@ -2311,22 +2311,22 @@ void ext_main(void* r) {
 	CLASS_ATTR_FLOAT(this_class, "far_clip", 0, Vr, far_clip);
 	CLASS_ATTR_ACCESSORS(this_class, "far_clip", NULL, vr_far_clip_set);
 
-	CLASS_ATTR_LONG(this_class, "connected", 0, Vr, connected);
+	CLASS_ATTR_ATOM_LONG(this_class, "connected", 0, Vr, connected);
 	CLASS_ATTR_ACCESSORS(this_class, "connected", NULL, vr_connected_set);
 	CLASS_ATTR_STYLE(this_class, "connected", 0, "onoff");
 
 
-	CLASS_ATTR_LONG(this_class, "glfinishhack", 0, Vr, glfinishhack);
+	CLASS_ATTR_ATOM_LONG(this_class, "glfinishhack", 0, Vr, glfinishhack);
 	CLASS_ATTR_STYLE(this_class, "glfinishhack", 0, "onoff");
 
-	CLASS_ATTR_LONG(this_class, "oculus_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, oculus_available);
+	CLASS_ATTR_ATOM_LONG(this_class, "oculus_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, oculus_available);
 	CLASS_ATTR_STYLE(this_class, "oculus_available", 0, "onoff");
-	CLASS_ATTR_LONG(this_class, "steam_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, steam_available);
+	CLASS_ATTR_ATOM_LONG(this_class, "steam_available", ATTR_SET_OPAQUE | ATTR_SET_OPAQUE_USER, Vr, steam_available);
 	CLASS_ATTR_STYLE(this_class, "steam_available", 0, "onoff");
 
 	CLASS_ATTR_SYM(this_class, "driver", 0, Vr, driver);
 	CLASS_ATTR_ACCESSORS(this_class, "driver", NULL, vr_driver_set);
-	CLASS_ATTR_LONG(this_class, "preferred_driver_only", 0, Vr, preferred_driver_only);
+	CLASS_ATTR_ATOM_LONG(this_class, "preferred_driver_only", 0, Vr, preferred_driver_only);
 	CLASS_ATTR_STYLE(this_class, "preferred_driver_only", 0, "onoff");
 
 
