@@ -17,3 +17,9 @@ package-info.json
 *.db
 *.ipch
 *.opendb
+
+*.mxe64
+*.mxo
+
+*.vcxproj.user
+.vs/

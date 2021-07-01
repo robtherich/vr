@@ -270,7 +270,7 @@
       <DataExecutionPrevention />
       <ImportLibrary>$(IntDir)$(ProjectName).lib</ImportLibrary>
       <TargetMachine>MachineX64</TargetMachine>
-      <AdditionalLibraryDirectories>openvr\lib\win64;LibOVR\Lib\Windows\Win64\Release\VS2015;$(C74SUPPORT)\max-includes\x64;$(C74SUPPORT)\msp-includes\x64;$(C74SUPPORT)\jit-includes\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>.\openvr\lib\win64;.\LibOVR\Lib\Windows\x64\Release\VS2015;$(C74SUPPORT)\max-includes\x64;$(C74SUPPORT)\msp-includes\x64;$(C74SUPPORT)\jit-includes\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>LibOVR.lib;openvr_api.lib;opengl32.lib;MaxAPI.lib;MaxAudio.lib;jitlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
