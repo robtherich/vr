@@ -1,0 +1,24 @@
+{
+	"author" : "Graham Wakefield",
+	"description" : "Virtual Reality HMDs for Max",
+	"homepatcher" : "vr.maxhelp",
+	"max_version_min" : "8.0", "max_version_max" : "none",
+	"name" : "VR",
+	"os" : {
+		"macintosh" : {
+			"platform" : [ "x64" ],
+			"min_version" : "none"
+		},
+		"windows" : {
+			"platform" : [ "x64" ],
+			"min_version" : "none"
+		}
+	},
+	"package_extra" : {
+		"reverse_domain" : "com.cycling74",
+		"copyright" : "Copyright (c) 2017 Graham Wakefield"
+	},
+	"tags" : [ "vr", "virtual reality", "htc vive", "oculus rift" ],
+	"version" : "@GIT_VERSION_MAJ@.@GIT_VERSION_MIN@.@GIT_VERSION_SUB@",
+	"website" : "https://github.com/worldmaking/vr"
+}
