@@ -11,6 +11,7 @@ extern "C" {
 #include "ext_dictionary.h"
 #include "ext_dictobj.h"
 #include "ext_systhread.h"
+#include "ext_preferences.h"
 	
 #include "z_dsp.h"
 	

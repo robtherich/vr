@@ -102,6 +102,7 @@ glm::mat4 to_glm(vr::HmdMatrix44_t const m) {
 
 
 static t_class* this_class = nullptr;
+static bool is_gl3 = false;
 
 struct Vr {
 
@@ -2220,6 +2221,8 @@ void vr_assist(Vr* self, void* unused, long m, long a, char* s) {
 
 
 void ext_main(void* r) {
+
+	is_gl3 = (preferences_getsym("glengine") == gensym("gl3"));
 
 	ps_jit_gl_texture = gensym("jit_gl_texture");
 	ps_glid = gensym("glid");
