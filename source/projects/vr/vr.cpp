@@ -139,6 +139,7 @@ struct Vr {
 	GLuint fbo_id = 0;
 	GLuint rbo_id = 0;
 	t_atom_long fbo_dim[2];
+	void* gl3_texture = 0;
 
 	// driver-specific:
 	struct {
@@ -656,14 +657,51 @@ struct Vr {
 			object_error(&ob, "no texture to draw");
 			return;	// no texture to copy from.
 		}
-		// TODO: verify that texob is a texture
-
-		// get input properties:
-		GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
-		t_atom_long input_texture_dim[2];
-		object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
-
+		if (object_classname(jit_texture) != ps_jit_gl_texture) {
+			object_error(&ob, "%s is not a texture object", intexture->s_name);
+			return;	// no texture to copy from.
+		}
 		if (connected) {
+			if (is_gl3) {
+#ifdef USE_STEAM_DRIVER
+				if (driver == ps_steam) {
+					if (!gl3_texture) {
+						t_symbol* context = object_attr_getsym(this, gensym("drawto"));
+						gl3_texture = jit_object_new(ps_jit_gl_texture, context);
+						if (!gl3_texture) {
+							object_error((t_object*)this, "failed to create texture");
+							return;
+						}
+						object_attr_setlong(gl3_texture, gensym("rectangle"), 0);
+						object_attr_setlong_array(gl3_texture, _jit_sym_dim, 2, fbo_dim);
+					}
+					t_atom a;
+					atom_setsym(&a, intexture);
+					jit_object_method_typed(gl3_texture, ps_jit_gl_texture, 1, &a, NULL);
+
+					steam.fbo_texture_id = jit_attr_getlong(gl3_texture, ps_glid);
+					if (steam.fbo_texture_id) {
+						steam_submit_texture();
+					}
+					else {
+						object_error((t_object*)this, "failed to copy texture");
+					}
+				}
+#endif
+#ifdef USE_OCULUS_DRIVER
+				if (driver == ps_oculus) {
+
+				}
+#endif
+				return;
+			}
+
+			// get input properties:
+			GLuint input_texture_id = object_attr_getlong(jit_texture, ps_glid);
+			t_atom_long input_texture_dim[2];
+			object_attr_getlong_array(jit_texture, _jit_sym_dim, 2, input_texture_dim);
+
+
 			// submit it to the driver
 			if (!fbo_id) {
 				// TODO try to allocate FBO for copying Jitter texture to driver?
@@ -678,8 +716,11 @@ struct Vr {
 			// TODO driver specific
 #ifdef USE_STEAM_DRIVER
 			if (driver == ps_steam) {
-				if (!steam_submit_texture(input_texture_id, input_texture_dim)) {
+				if (!steam_copy_texture(input_texture_id, input_texture_dim)) {
 					object_error(&ob, "problem submitting texture");
+				}
+				else {
+					steam_submit_texture();
 				}
 			}
 #endif
@@ -1798,7 +1839,7 @@ struct Vr {
 	}
 
 
-	bool steam_submit_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
+	bool steam_copy_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
 		if (!steam.hmd) return false;
 
 		// main difference here with oculus is that we have to allocate the texture
@@ -1810,14 +1851,17 @@ struct Vr {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
+	}
 
+	bool steam_submit_texture() {
+		bool flip = is_gl3;
 		vr::EVRCompositorError err;
 		//GraphicsAPIConvention enum was renamed to TextureType in OpenVR SDK 1.0.5
 		// TODO: expose different colour options as attributes?
 		vr::Texture_t vrTexture = { (void*)steam.fbo_texture_id, vr::TextureType_OpenGL, vr::ColorSpace_Gamma };
 
-		vr::VRTextureBounds_t leftBounds = { 0.f, 0.f, 0.5f, 1.f };
-		vr::VRTextureBounds_t rightBounds = { 0.5f, 0.f, 1.f, 1.f };
+		vr::VRTextureBounds_t leftBounds = { 0.f, (flip ? 1.f : 0.f), 0.5f, (!flip ? 1.f : 0.f) };
+		vr::VRTextureBounds_t rightBounds = { 0.5f, (flip ? 1.f : 0.f), 1.f, (!flip ? 1.f : 0.f) };
 
 		err = vr::VRCompositor()->Submit(vr::Eye_Left, &vrTexture, &leftBounds);
 		switch (err) {
@@ -2037,12 +2081,16 @@ struct Vr {
 		// so instead here's uploading to a jit.gl.texture from our CPU copy:
 		if (steam.camtex.tex) {
 			// update texture:
-			glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
-			glEnable(GL_TEXTURE_RECTANGLE_ARB);
-			glActiveTextureARB(GL_TEXTURE0);
+			if (is_gl3) {
+				glPushAttrib(GL_ENABLE_BIT | GL_TEXTURE_BIT);
+				glEnable(GL_TEXTURE_RECTANGLE_ARB);
+			}
+			glActiveTexture(GL_TEXTURE0);
 			glBindTexture(GL_TEXTURE_RECTANGLE_ARB, steam.camtex.glid());
 			glTexSubImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, 0, 0, steam.camtex.dim[0], steam.camtex.dim[1], GL_RGBA, GL_UNSIGNED_BYTE, steam.m_pCameraFrameBuffer);
-			glPopAttrib();
+			if (is_gl3) {
+				glPopAttrib();
+			}
 
 			// and output:
 			t_atom a[2];
