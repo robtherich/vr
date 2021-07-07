@@ -332,6 +332,8 @@ struct Vr {
 		object_attr_touch(&ob, gensym("dest_ready"));
 
 		release_gpu_resources();
+		if(gl3_texture) jit_object_free(gl3_texture);
+		gl3_texture = 0;
 
 		return JIT_ERR_NONE;
 	}
@@ -531,7 +533,7 @@ struct Vr {
 	}
 
 	void create_gpu_resources() {
-		if (!connected && !dest_ready) return; // we're not ready yet
+		if (is_gl3 || (!connected && !dest_ready)) return; // we're not ready yet
 		if (fbo_id) return; // we already did it
 
 		VR_DEBUG_POST("create_gpu_resources");
@@ -1851,6 +1853,7 @@ struct Vr {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
+		return true;
 	}
 
 	bool steam_submit_texture() {
