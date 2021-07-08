@@ -674,6 +674,7 @@ struct Vr {
 					}
 					object_attr_setlong(gl3_texture, gensym("rectangle"), 0);
 					object_attr_setlong_array(gl3_texture, _jit_sym_dim, 2, fbo_dim);
+					object_attr_setlong(gl3_texture, gensym("gltarget"), GL_TEXTURE_2D);
 				}
 #ifdef USE_STEAM_DRIVER
 				if (driver == ps_steam) {
@@ -1387,7 +1388,6 @@ struct Vr {
 	bool oculus_submit_texture_gl3(t_symbol *intexture) {
 		if (oculus_texture_ready()) {
 			object_attr_setlong(gl3_texture, ps_glid, oculus_get_texid());
-			// maybe something else here???
 			gl3_copy_texture(intexture);
 			return oculus_commit_texture();
 		}
