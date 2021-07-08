@@ -572,12 +572,12 @@ struct Vr {
 				steam_release_gpu_resources();
 			}
 #endif
-#ifdef USE_OCULUS_DRIVER
-			if (driver == ps_oculus)  {
-				oculus_release_gpu_resources();
-			}
-#endif
 		}
+#ifdef USE_OCULUS_DRIVER
+		if (driver == ps_oculus)  {
+			oculus_release_gpu_resources();
+		}
+#endif
 	}
 	
 	// poll HMD for events
@@ -665,22 +665,19 @@ struct Vr {
 		}
 		if (connected) {
 			if (is_gl3) {
+				if (!gl3_texture) {
+					t_symbol* context = object_attr_getsym(this, gensym("drawto"));
+					gl3_texture = jit_object_new(ps_jit_gl_texture, context);
+					if (!gl3_texture) {
+						object_error((t_object*)this, "failed to create texture");
+						return;
+					}
+					object_attr_setlong(gl3_texture, gensym("rectangle"), 0);
+					object_attr_setlong_array(gl3_texture, _jit_sym_dim, 2, fbo_dim);
+				}
 #ifdef USE_STEAM_DRIVER
 				if (driver == ps_steam) {
-					if (!gl3_texture) {
-						t_symbol* context = object_attr_getsym(this, gensym("drawto"));
-						gl3_texture = jit_object_new(ps_jit_gl_texture, context);
-						if (!gl3_texture) {
-							object_error((t_object*)this, "failed to create texture");
-							return;
-						}
-						object_attr_setlong(gl3_texture, gensym("rectangle"), 0);
-						object_attr_setlong_array(gl3_texture, _jit_sym_dim, 2, fbo_dim);
-					}
-					t_atom a;
-					atom_setsym(&a, intexture);
-					jit_object_method_typed(gl3_texture, ps_jit_gl_texture, 1, &a, NULL);
-
+					gl3_copy_texture(intexture);
 					steam.fbo_texture_id = jit_attr_getlong(gl3_texture, ps_glid);
 					if (steam.fbo_texture_id) {
 						steam_submit_texture();
@@ -692,7 +689,10 @@ struct Vr {
 #endif
 #ifdef USE_OCULUS_DRIVER
 				if (driver == ps_oculus) {
-
+					oculus_create_gpu_resources();
+					if (!oculus_submit_texture_gl3(intexture)) {
+						object_error(&ob, "problem submitting texture");
+					}
 				}
 #endif
 				return;
@@ -743,6 +743,12 @@ struct Vr {
 	
 	//////////////////////////////////////////////////////////////////////////////////////
 	
+	void gl3_copy_texture(t_symbol * intexture) {
+		t_atom a;
+		atom_setsym(&a, intexture);
+		jit_object_method_typed(gl3_texture, ps_jit_gl_texture, 1, &a, NULL);
+	}
+
 	bool fbo_copy_texture(GLuint 		input_texture_id, 
 							 t_atom_long 	input_texture_dim[2],
 							 GLuint 		fbo_id, 
@@ -1361,25 +1367,43 @@ struct Vr {
 		}
 	}
 
-	bool oculus_submit_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
-		if (!oculus.textureChain) {
-			object_error(&ob, "no texture set yet");
-			return false;
-		}
-
+	GLuint oculus_get_texid() {
 		// get our next destination texture in the texture chain:
 		int curIndex;
 		ovr_GetTextureSwapChainCurrentIndex(oculus.session, oculus.textureChain, &curIndex);
 		GLuint oculus_target_texture_id;
 		ovr_GetTextureSwapChainBufferGL(oculus.session, oculus.textureChain, curIndex, &oculus_target_texture_id);
+		return oculus_target_texture_id;
+	}
 
-		// TODO: check success
-		if (!fbo_copy_texture(input_texture_id, input_texture_dim, 
-			fbo_id, oculus_target_texture_id, fbo_dim, true)) {
+	bool oculus_texture_ready() {
+		if (!oculus.textureChain) {
+			object_error(&ob, "no texture set yet");
+			return false;
+		}
+		return true;
+	}
+
+	bool oculus_submit_texture_gl3(t_symbol *intexture) {
+		if (oculus_texture_ready()) {
+			object_attr_setlong(gl3_texture, ps_glid, oculus_get_texid());
+			// maybe something else here???
+			gl3_copy_texture(intexture);
+			return oculus_commit_texture();
+		}
+		return false;
+	}
+
+	bool oculus_submit_texture(GLuint input_texture_id, t_atom_long input_texture_dim[2]) {
+		if (!oculus_texture_ready() || !fbo_copy_texture(input_texture_id, input_texture_dim,
+			fbo_id, oculus_get_texid(), fbo_dim, true)) {
 			object_error(&ob, "problem copying texture");
 			return false;
 		}
+		return oculus_commit_texture();
+	}
 
+	bool oculus_commit_texture() {
 		// and commit it
 		if (!OVR_SUCCESS(ovr_CommitTextureSwapChain(oculus.session, oculus.textureChain))) {
 			object_error(&ob, "problem committing texture chain");
